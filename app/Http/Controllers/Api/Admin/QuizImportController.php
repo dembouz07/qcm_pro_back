@@ -17,7 +17,13 @@ class QuizImportController extends Controller
     public function store(Request $request, QuizCreator $creator)
     {
         $request->validate([
-            'file' => ['required', 'file', 'mimes:csv,txt,json,doc,docx,pdf', 'max:10240'],
+            'file' => [
+                'required', 
+                'file', 
+                'mimes:csv,txt,json,doc,docx,pdf',
+                'mimetypes:text/csv,text/plain,application/json,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf',
+                'max:10240'
+            ],
             'title' => ['nullable', 'string', 'max:190'],
             'description' => ['nullable', 'string'],
             'school_class_id' => ['nullable', Rule::exists('school_classes', 'id')],
@@ -26,6 +32,19 @@ class QuizImportController extends Controller
         ]);
 
         $extension = strtolower($request->file('file')->getClientOriginalExtension());
+        
+        // Fallback: détecter l'extension depuis le type MIME si l'extension est vide
+        if (empty($extension)) {
+            $mimeType = $request->file('file')->getMimeType();
+            $extension = match($mimeType) {
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+                'application/msword' => 'doc',
+                'application/pdf' => 'pdf',
+                'application/json', 'text/json' => 'json',
+                'text/csv', 'text/plain' => 'csv',
+                default => 'csv'
+            };
+        }
 
         $data = match ($extension) {
             'json' => $this->parseJson($request),
