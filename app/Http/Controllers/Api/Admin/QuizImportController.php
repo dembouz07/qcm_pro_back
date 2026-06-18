@@ -17,13 +17,7 @@ class QuizImportController extends Controller
     public function store(Request $request, QuizCreator $creator)
     {
         $request->validate([
-            'file' => [
-                'required', 
-                'file', 
-                'mimes:csv,txt,json,doc,docx,pdf',
-                'mimetypes:text/csv,text/plain,application/json,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf',
-                'max:10240'
-            ],
+            'file' => ['required', 'file', 'max:10240'],
             'title' => ['nullable', 'string', 'max:190'],
             'description' => ['nullable', 'string'],
             'school_class_id' => ['nullable', Rule::exists('school_classes', 'id')],
