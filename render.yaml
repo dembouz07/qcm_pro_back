@@ -1,0 +1,56 @@
+services:
+  # Backend Laravel API
+  - type: web
+    name: qcm-backend
+    runtime: php
+    plan: free
+    buildCommand: bash render-build.sh
+    startCommand: php artisan serve --host=0.0.0.0 --port=$PORT
+    envVars:
+      - key: APP_NAME
+        value: QCM Pro
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: false
+      - key: APP_TIMEZONE
+        value: Africa/Dakar
+      - key: APP_KEY
+        generateValue: true
+      - key: APP_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: DB_CONNECTION
+        value: pgsql
+      - key: DB_HOST
+        fromDatabase:
+          name: qcm-database
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: qcm-database
+          property: port
+      - key: DB_DATABASE
+        fromDatabase:
+          name: qcm-database
+          property: database
+      - key: DB_USERNAME
+        fromDatabase:
+          name: qcm-database
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: qcm-database
+          property: password
+      - key: SESSION_DRIVER
+        value: cookie
+      - key: SESSION_DOMAIN
+        sync: false
+      - key: SANCTUM_STATEFUL_DOMAINS
+        sync: false
+
+databases:
+  - name: qcm-database
+    databaseName: qcm_app
+    plan: free

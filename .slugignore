@@ -1,0 +1,5 @@
+/tests
+/storage/logs/*
+/node_modules
+/.env.example
+/README.md
