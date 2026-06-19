@@ -59,7 +59,7 @@ class StudentQuizController extends Controller
 
         if ($quiz->isLocked()) {
             return response()->json([
-                'message' => 'Ce QCM n’est pas encore ouvert.',
+                'message' => 'Ce QCM n'est pas encore ouvert.',
                 'starts_at' => $quiz->starts_at,
             ], 423);
         }
@@ -102,12 +102,13 @@ class StudentQuizController extends Controller
 
         if ($quiz->isLocked()) {
             return response()->json([
-                'message' => 'Ce QCM n’est pas encore ouvert.',
+                'message' => 'Ce QCM n'est pas encore ouvert.',
                 'starts_at' => $quiz->starts_at,
             ], 423);
         }
 
-        if ($quiz->isClosed()) {
+        // Marge de grâce de 10 secondes pour la soumission automatique
+        if ($quiz->isClosed(10)) {
             return response()->json([
                 'message' => 'Ce QCM est fermé.',
             ], 403);
@@ -195,7 +196,7 @@ class StudentQuizController extends Controller
     {
         if (!$quiz->is_published || $quiz->school_class_id !== $request->user()->school_class_id) {
             abort(response()->json([
-                'message' => 'Ce QCM n’est pas disponible pour votre classe.',
+                'message' => 'Ce QCM n'est pas disponible pour votre classe.',
             ], 403));
         }
     }

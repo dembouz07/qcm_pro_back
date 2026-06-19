@@ -54,9 +54,14 @@ class Quiz extends Model
         return Carbon::now()->lt($this->starts_at);
     }
 
-    public function isClosed(): bool
+    public function isClosed(int $gracePeriodSeconds = 0): bool
     {
-        return $this->ends_at !== null && Carbon::now()->gt($this->ends_at);
+        if ($this->ends_at === null) {
+            return false;
+        }
+        
+        $closedAt = $this->ends_at->copy()->addSeconds($gracePeriodSeconds);
+        return Carbon::now()->gt($closedAt);
     }
 
     public function isOpen(): bool
