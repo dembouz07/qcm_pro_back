@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('submission_id')->constrained('submissions')->cascadeOnDelete();
             $table->foreignId('question_id')->constrained('questions')->cascadeOnDelete();
-            $table->foreignId('choice_id')->constrained('choices')->cascadeOnDelete();
+            $table->foreignId('choice_id')->nullable()->constrained('choices')->nullOnDelete();
             $table->boolean('is_correct')->default(false);
             $table->decimal('points_awarded', 8, 2)->default(0);
             $table->timestamps();

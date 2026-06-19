@@ -14,11 +14,11 @@ class StudentQuizController extends Controller
 {
     public function index(Request $request)
     {
-        $user = $request->user();
+        $user = $request->user()->load('schoolClass');
 
         if (!$user->school_class_id) {
             return response()->json([
-                'message' => 'Aucune classe associée à ce compte.',
+                'message' => 'Aucune classe associée à ce compte élève.',
                 'data' => [],
             ]);
         }
@@ -42,15 +42,20 @@ class StudentQuizController extends Controller
                     'id' => $quiz->id,
                     'title' => $quiz->title,
                     'description' => $quiz->description,
+                    'school_class' => $quiz->schoolClass,
                     'starts_at' => $quiz->starts_at,
                     'ends_at' => $quiz->ends_at,
                     'questions_count' => $quiz->questions_count,
                     'status' => $this->statusFor($quiz, $submission),
                     'submission' => $submission,
                 ];
-            });
+            })
+            ->values();
 
-        return response()->json($quizzes);
+        return response()->json([
+            'student_class' => $user->schoolClass,
+            'data' => $quizzes,
+        ]);
     }
 
     public function show(Request $request, Quiz $quiz)
@@ -59,7 +64,7 @@ class StudentQuizController extends Controller
 
         if ($quiz->isLocked()) {
             return response()->json([
-                'message' => 'Ce QCM n'est pas encore ouvert.',
+                'message' => "Ce QCM n'est pas encore ouvert.",
                 'starts_at' => $quiz->starts_at,
             ], 423);
         }
@@ -102,13 +107,16 @@ class StudentQuizController extends Controller
 
         if ($quiz->isLocked()) {
             return response()->json([
-                'message' => 'Ce QCM n'est pas encore ouvert.',
+                'message' => "Ce QCM n'est pas encore ouvert.",
                 'starts_at' => $quiz->starts_at,
             ], 423);
         }
 
-        // Marge de grâce de 10 secondes pour la soumission automatique
-        if ($quiz->isClosed(10)) {
+        $isAutoSubmit = $request->boolean('auto_submit', false);
+        $gracePeriodSeconds = $isAutoSubmit ? 60 : 0;
+
+        // La soumission automatique a une petite marge pour éviter qu'un décalage réseau bloque l'élève.
+        if ($quiz->isClosed($gracePeriodSeconds)) {
             return response()->json([
                 'message' => 'Ce QCM est fermé.',
             ], 403);
@@ -121,16 +129,19 @@ class StudentQuizController extends Controller
         }
 
         $data = $request->validate([
-            'answers' => ['required', 'array'],
+            'auto_submit' => ['sometimes', 'boolean'],
+            'answers' => ['nullable', 'array'],
             'answers.*.question_id' => ['required', 'integer'],
-            'answers.*.choice_id' => ['required', 'integer'],
+            'answers.*.choice_id' => ['nullable', 'integer'],
         ]);
 
         $quiz->load('questions.choices');
         $questions = $quiz->questions->keyBy('id');
-        $submittedAnswers = collect($data['answers'])->keyBy('question_id');
+        $submittedAnswers = collect($data['answers'] ?? [])
+            ->filter(fn ($answer) => isset($answer['question_id']))
+            ->keyBy('question_id');
 
-        if ($submittedAnswers->count() !== $questions->count()) {
+        if (!$isAutoSubmit && $submittedAnswers->count() !== $questions->count()) {
             throw ValidationException::withMessages([
                 'answers' => 'Vous devez répondre à toutes les questions.',
             ]);
@@ -152,23 +163,27 @@ class StudentQuizController extends Controller
 
             foreach ($questions as $question) {
                 $answer = $submittedAnswers->get($question->id);
-                $choice = Choice::where('id', $answer['choice_id'])
-                    ->where('question_id', $question->id)
-                    ->first();
+                $choice = null;
 
-                if (!$choice) {
-                    throw ValidationException::withMessages([
-                        'answers' => 'Un choix envoyé ne correspond pas à sa question.',
-                    ]);
+                if ($answer && !empty($answer['choice_id'])) {
+                    $choice = Choice::where('id', $answer['choice_id'])
+                        ->where('question_id', $question->id)
+                        ->first();
+
+                    if (!$choice) {
+                        throw ValidationException::withMessages([
+                            'answers' => 'Un choix envoyé ne correspond pas à sa question.',
+                        ]);
+                    }
                 }
 
-                $isCorrect = (bool) $choice->is_correct;
+                $isCorrect = $choice ? (bool) $choice->is_correct : false;
                 $pointsAwarded = $isCorrect ? (float) $question->points : 0.0;
                 $score += $pointsAwarded;
 
                 $submission->answers()->create([
                     'question_id' => $question->id,
-                    'choice_id' => $choice->id,
+                    'choice_id' => $choice?->id,
                     'is_correct' => $isCorrect,
                     'points_awarded' => $pointsAwarded,
                 ]);
@@ -187,16 +202,18 @@ class StudentQuizController extends Controller
         });
 
         return response()->json([
-            'message' => 'Réponses envoyées avec succès.',
+            'message' => $isAutoSubmit
+                ? 'Temps terminé : réponses envoyées automatiquement.'
+                : 'Réponses envoyées avec succès.',
             'submission' => $submission,
         ], 201);
     }
 
     private function ensureStudentCanAccessQuiz(Request $request, Quiz $quiz): void
     {
-        if (!$quiz->is_published || $quiz->school_class_id !== $request->user()->school_class_id) {
+        if (!$quiz->is_published || (int) $quiz->school_class_id !== (int) $request->user()->school_class_id) {
             abort(response()->json([
-                'message' => 'Ce QCM n'est pas disponible pour votre classe.',
+                'message' => "Ce QCM n'est pas disponible pour votre classe.",
             ], 403));
         }
     }
