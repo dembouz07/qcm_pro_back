@@ -282,6 +282,28 @@ class QuizImportController extends Controller
 
         $lines = preg_split('/\n+/', $text);
 
+        // Cas PDF : la conversion colle parfois plusieurs options sur une même ligne
+        // (ex "A) ... B) ... C) ...") sans cases à cocher. On ré-éclate ces lignes.
+        $expandedLines = [];
+        foreach ($lines as $rawLine) {
+            $line = trim($rawLine);
+            if ($line === '') continue;
+
+            $labelCount = preg_match_all('/(?<![A-Za-z])[A-Da-d][\.\)]\s/u', $line);
+            if (!str_contains($line, '[') && $labelCount >= 2) {
+                $parts = preg_split('/(?=(?<![A-Za-z])[A-Da-d][\.\)]\s)/u', $line);
+                foreach ($parts as $part) {
+                    $part = trim($part);
+                    if ($part !== '') {
+                        $expandedLines[] = $part;
+                    }
+                }
+            } else {
+                $expandedLines[] = $line;
+            }
+        }
+        $lines = $expandedLines;
+
         $questions = [];
         $currentQuestion = null;
         $currentChoices = [];
@@ -290,13 +312,14 @@ class QuizImportController extends Controller
             $line = trim($rawLine);
             if ($line === '') continue;
 
-            // Ignore les titres (tout en majuscules, sans "?").
-            if (mb_strlen($line) > 12 && mb_strtoupper($line, 'UTF-8') === $line && !str_contains($line, '?')) {
-                continue;
-            }
-
             $choice = $this->parseChoice($line);
             $isNumberedQuestion = (bool) preg_match('/^\d+\s*[\.\)\-:]\s+/u', $line);
+
+            // Ignore les titres (tout en majuscules, sans "?") qui ne sont ni un choix ni une question.
+            if ($choice === null && !$isNumberedQuestion && !str_contains($line, '?')
+                && mb_strlen($line) > 12 && mb_strtoupper($line, 'UTF-8') === $line) {
+                continue;
+            }
 
             // Une question : ligne numérotée (ex "1.") qui n'est pas un choix,
             // ou une ligne contenant "?" qui n'est pas un choix.
