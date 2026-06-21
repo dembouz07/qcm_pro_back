@@ -271,122 +271,147 @@ class QuizImportController extends Controller
 
     private function parseStructuredText(string $text): array
     {
+        // Normaliser les fins de ligne.
+        $text = str_replace(["\r\n", "\r"], "\n", $text);
+
+        // S'assurer que chaque marqueur de case à cocher démarre sur sa propre ligne,
+        // même si l'extraction Word/PDF a collé plusieurs éléments sur une seule ligne.
+        $text = preg_replace('/\s*(\[[^\]]{0,3}\])/u', "\n$1", $text);
+        // Idem pour les symboles de case à cocher.
+        $text = preg_replace('/\s*([☑☐✓✔])/u', "\n$1", $text);
+
+        $lines = preg_split('/\n+/', $text);
+
         $questions = [];
-        $lines = explode("\n", $text);
         $currentQuestion = null;
         $currentChoices = [];
-        
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if (empty($line)) continue;
-            
-            // Ignore les titres (tout en majuscules, pas de ?)
-            if (mb_strlen($line) > 10 && strtoupper($line) === $line && !str_contains($line, '?')) {
+
+        foreach ($lines as $rawLine) {
+            $line = trim($rawLine);
+            if ($line === '') continue;
+
+            // Ignore les titres (tout en majuscules, sans "?").
+            if (mb_strlen($line) > 12 && mb_strtoupper($line, 'UTF-8') === $line && !str_contains($line, '?')) {
                 continue;
             }
-            
-            // Détecte une question (contient ?)
-            if (str_contains($line, '?')) {
-                // Sauvegarder la question précédente
+
+            $choice = $this->parseChoice($line);
+            $isNumberedQuestion = (bool) preg_match('/^\d+\s*[\.\)\-:]\s+/u', $line);
+
+            // Une question : ligne numérotée (ex "1.") qui n'est pas un choix,
+            // ou une ligne contenant "?" qui n'est pas un choix.
+            if (($isNumberedQuestion || str_contains($line, '?')) && $choice === null) {
                 if ($currentQuestion !== null && !empty($currentChoices)) {
                     $questions[] = $this->finalizeQuestion($currentQuestion, $currentChoices);
                 }
-                
-                // Nettoyer la question
-                $cleanQuestion = preg_replace('/^\d+[\.\)\:]?\s*/', '', $line);
-                $cleanQuestion = preg_replace('/^Question\s+\d+\s*[\:\-\.]?\s*/i', '', $cleanQuestion);
+
+                $cleanQuestion = preg_replace('/^Question\s+\d+\s*[\:\-\.]?\s*/iu', '', $line);
+                $cleanQuestion = preg_replace('/^\d+\s*[\.\)\-:]\s*/u', '', $cleanQuestion);
                 $currentQuestion = trim($cleanQuestion);
                 $currentChoices = [];
+                continue;
             }
-            // Détecte un choix avec plusieurs patterns
-            else {
-                $choice = $this->parseChoice($line);
-                if ($choice !== null && $currentQuestion !== null) {
-                    $currentChoices[] = $choice;
-                }
+
+            // Sinon, c'est un choix rattaché à la question courante.
+            if ($choice !== null && $currentQuestion !== null) {
+                $currentChoices[] = $choice;
             }
         }
-        
-        // Ajouter la dernière question
+
         if ($currentQuestion !== null && !empty($currentChoices)) {
             $questions[] = $this->finalizeQuestion($currentQuestion, $currentChoices);
         }
-        
+
         if (empty($questions)) {
             throw ValidationException::withMessages([
-                'file' => 'Aucune question détectée. Format: "1. Question ?" puis "[x] Choix" ou "A. Choix"'
+                'file' => 'Aucune question détectée. Format attendu : "1. Question ?" puis "[x] Bonne réponse" / "[ ] Mauvaise réponse".'
             ]);
         }
-        
-        // Valider minimum 2 choix par question
+
         foreach ($questions as $index => $question) {
             if (count($question['choices']) < 2) {
                 throw ValidationException::withMessages([
-                    'file' => 'Question ' . ($index + 1) . ': minimum 2 choix requis (trouvé: ' . count($question['choices']) . ')'
+                    'file' => 'Question ' . ($index + 1) . ' : au moins 2 choix requis (trouvé : ' . count($question['choices']) . ').'
                 ]);
             }
         }
-        
+
         return ['questions' => $questions];
     }
-    
+
     private function parseChoice(string $line): ?array
     {
-        // Pattern 1: [x] ou [ ]
-        if (preg_match('/^\[([x\s\*✓☑])\]\s*(.+)$/i', $line, $matches)) {
-            return [
-                'body' => trim($matches[2]),
-                'is_correct' => preg_match('/[x\*✓☑]/i', $matches[1]) ? true : false
-            ];
+        $isCorrect = false;
+        $body = null;
+
+        // Case à cocher [x], [X], [ ], [✓], [☑], [*]
+        if (preg_match('/^\[\s*([xX✓☑✔\*]?)\s*\]\s*(.*)$/u', $line, $m)) {
+            $isCorrect = trim($m[1]) !== '';
+            $body = $m[2];
         }
-        
-        // Pattern 2: A. ou A) avec ou sans espace
-        if (preg_match('/^([A-Z])[\.\)]\s*(.+)$/i', $line, $matches)) {
-            return [
-                'body' => trim($matches[2]),
-                'is_correct' => false // Par défaut, sera marqué correct si premier ou indiqué
-            ];
+        // Symbole coché ☑ ✓ ✔
+        elseif (preg_match('/^[☑✓✔]\s*(.*)$/u', $line, $m)) {
+            $isCorrect = true;
+            $body = $m[1];
         }
-        
-        // Pattern 3: ☑ ou ☐
-        if (preg_match('/^[☑☐]\s*(.+)$/u', $line, $matches)) {
-            return [
-                'body' => trim($matches[1]),
-                'is_correct' => str_starts_with($line, '☑')
-            ];
+        // Symbole non coché ☐
+        elseif (preg_match('/^☐\s*(.*)$/u', $line, $m)) {
+            $isCorrect = false;
+            $body = $m[1];
         }
-        
-        // Pattern 4: Ligne commençant par un tiret ou bullet
-        if (preg_match('/^[\-\•\*]\s*(.+)$/', $line, $matches)) {
-            return [
-                'body' => trim($matches[1]),
-                'is_correct' => false
-            ];
+        // Puce - • *
+        elseif (preg_match('/^[\-•\*]\s+(.*)$/u', $line, $m)) {
+            $body = $m[1];
         }
-        
-        return null;
+        // Lettre seule "A)" "A." "a)" suivie d'un espace
+        elseif (preg_match('/^[A-Za-z][\.\)]\s+.+$/u', $line)) {
+            $body = $line;
+        }
+        else {
+            return null;
+        }
+
+        // Retirer un éventuel libellé de type "A)" / "B." en tête du texte.
+        $body = preg_replace('/^[A-Za-z][\.\)]\s*/u', '', trim((string) $body));
+        $body = trim($body);
+
+        if ($body === '') {
+            return null;
+        }
+
+        return [
+            'body' => $body,
+            'is_correct' => $isCorrect,
+        ];
     }
-    
+
     private function finalizeQuestion(string $questionText, array $choices): array
     {
-        // Vérifier si au moins un choix est marqué correct
-        $hasCorrect = false;
-        foreach ($choices as $choice) {
-            if ($choice['is_correct']) {
-                $hasCorrect = true;
-                break;
+        // Index des choix marqués comme corrects.
+        $correctIndexes = [];
+        foreach ($choices as $i => $choice) {
+            if (!empty($choice['is_correct'])) {
+                $correctIndexes[] = $i;
             }
         }
-        
-        // Si aucun n'est marqué, marquer le premier
-        if (!$hasCorrect && !empty($choices)) {
+
+        if (count($correctIndexes) === 0 && !empty($choices)) {
+            // Aucune bonne réponse détectée : on marque la première par défaut.
             $choices[0]['is_correct'] = true;
+        } elseif (count($correctIndexes) > 1) {
+            // Plusieurs bonnes réponses : on ne garde que la première pour respecter
+            // la règle "exactement une bonne réponse".
+            foreach ($correctIndexes as $rank => $idx) {
+                if ($rank > 0) {
+                    $choices[$idx]['is_correct'] = false;
+                }
+            }
         }
-        
+
         return [
             'body' => $questionText,
             'points' => 1,
-            'choices' => $choices
+            'choices' => $choices,
         ];
     }
 }
