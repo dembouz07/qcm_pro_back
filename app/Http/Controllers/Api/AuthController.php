@@ -56,25 +56,38 @@ class AuthController extends Controller
         ]);
     }
 
+    public function checkEmail(Request $request)
+    {
+        $data = $request->validate([
+            'email' => ['required', 'email'],
+        ]);
+
+        $exists = User::where('email', $data['email'])->exists();
+
+        if (!$exists) {
+            return response()->json([
+                'exists' => false,
+                'message' => 'Aucun compte ne correspond à cet email.',
+            ], 404);
+        }
+
+        return response()->json([
+            'exists' => true,
+        ]);
+    }
+
     public function forgotPassword(Request $request)
     {
         $data = $request->validate([
             'email' => ['required', 'email'],
-            'name' => ['required', 'string'],
-            'school_class_id' => ['required', Rule::exists('school_classes', 'id')],
             'password' => ['required', 'confirmed', Password::min(8)],
         ]);
 
         $user = User::where('email', $data['email'])->first();
 
-        // Vérification de l'identité : email + nom + classe doivent correspondre.
-        if (
-            !$user
-            || mb_strtolower(trim($user->name)) !== mb_strtolower(trim($data['name']))
-            || (int) $user->school_class_id !== (int) $data['school_class_id']
-        ) {
+        if (!$user) {
             throw ValidationException::withMessages([
-                'email' => 'Les informations fournies ne correspondent à aucun compte.',
+                'email' => 'Aucun compte ne correspond à cet email.',
             ]);
         }
 
