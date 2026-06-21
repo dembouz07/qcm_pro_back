@@ -33,7 +33,8 @@ class StudentQuizController extends Controller
             ->withCount('questions')
             ->where('school_class_id', $user->school_class_id)
             ->where('is_published', true)
-            ->orderBy('starts_at')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
             ->get()
             ->map(function (Quiz $quiz) use ($submissions) {
                 $submission = $submissions->get($quiz->id);
@@ -45,6 +46,7 @@ class StudentQuizController extends Controller
                     'school_class' => $quiz->schoolClass,
                     'starts_at' => $quiz->starts_at,
                     'ends_at' => $quiz->ends_at,
+                    'created_at' => $quiz->created_at,
                     'questions_count' => $quiz->questions_count,
                     'status' => $this->statusFor($quiz, $submission),
                     'submission' => $submission,
