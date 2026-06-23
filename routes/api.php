@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Admin\SchoolClassController;
 use App\Http\Controllers\Api\Admin\QuizController;
 use App\Http\Controllers\Api\Admin\QuizImportController;
 use App\Http\Controllers\Api\Admin\QuizConverterController;
+use App\Http\Controllers\Api\Admin\ProgressiveQuizController;
 use App\Http\Controllers\Api\Admin\ResultController;
 use App\Http\Controllers\Api\Student\StudentQuizController;
 use App\Http\Middleware\EnsureRole;
@@ -42,6 +43,10 @@ Route::prefix('admin')
         Route::apiResource('quizzes', QuizController::class);
         Route::post('quizzes/import', [QuizImportController::class, 'store']);
         Route::post('quizzes/convert', [QuizConverterController::class, 'convert']);
+
+        // QCM progressifs (diagnostic par stades)
+        Route::post('progressive-quizzes', [ProgressiveQuizController::class, 'store']);
+        Route::put('progressive-quizzes/{quiz}', [ProgressiveQuizController::class, 'update']);
 
         Route::get('results', [ResultController::class, 'index']);
         Route::get('results/{submission}', [ResultController::class, 'show']);

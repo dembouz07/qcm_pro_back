@@ -29,6 +29,8 @@ class PublicQuizController extends Controller
             'id' => $quiz->id,
             'title' => $quiz->title,
             'description' => $quiz->description,
+            'type' => $quiz->type,
+            'stage_threshold' => $quiz->stage_threshold,
             'starts_at' => $quiz->starts_at,
             'ends_at' => $quiz->ends_at,
             'questions_count' => $quiz->questions_count,
@@ -83,10 +85,24 @@ class PublicQuizController extends Controller
 
         $quiz->load('questions.choices');
 
+        if ($quiz->isProgressive()) {
+            return response()->json([
+                'id' => $quiz->id,
+                'title' => $quiz->title,
+                'description' => $quiz->description,
+                'type' => 'progressive',
+                'stage_threshold' => $quiz->stage_threshold,
+                'starts_at' => $quiz->starts_at,
+                'ends_at' => $quiz->ends_at,
+                'stages' => $this->buildStages($quiz),
+            ]);
+        }
+
         return response()->json([
             'id' => $quiz->id,
             'title' => $quiz->title,
             'description' => $quiz->description,
+            'type' => 'standard',
             'starts_at' => $quiz->starts_at,
             'ends_at' => $quiz->ends_at,
             'questions' => $quiz->questions->map(fn ($question) => [
@@ -99,6 +115,30 @@ class PublicQuizController extends Controller
                 ])->values(),
             ])->values(),
         ]);
+    }
+
+    /**
+     * Regroupe les questions d'un QCM progressif par stade.
+     */
+    private function buildStages(Quiz $quiz): array
+    {
+        return $quiz->questions
+            ->groupBy('stage')
+            ->sortKeys()
+            ->map(fn ($questions, $stage) => [
+                'stage' => (int) $stage,
+                'questions' => $questions->map(fn ($question) => [
+                    'id' => $question->id,
+                    'body' => $question->body,
+                    'choices' => $question->choices->map(fn ($choice) => [
+                        'id' => $choice->id,
+                        'body' => $choice->body,
+                        'is_oui' => (bool) $choice->is_correct,
+                    ])->values(),
+                ])->values(),
+            ])
+            ->values()
+            ->toArray();
     }
 
     /**
@@ -150,6 +190,11 @@ class PublicQuizController extends Controller
         }
 
         $quiz->load('questions.choices');
+
+        if ($quiz->isProgressive()) {
+            return $this->submitProgressive($quiz, $data);
+        }
+
         $questions = $quiz->questions->keyBy('id');
         $submittedAnswers = collect($data['answers'] ?? [])
             ->filter(fn ($answer) => isset($answer['question_id']))
@@ -223,6 +268,90 @@ class PublicQuizController extends Controller
                 ? 'Temps terminé : réponses envoyées automatiquement.'
                 : 'Réponses envoyées avec succès.',
             'submission' => $submission,
+        ], 201);
+    }
+
+    /**
+     * Soumission d'un diagnostic progressif : calcule le score par stade
+     * et le stade atteint (dernier stade validé : score >= seuil).
+     */
+    private function submitProgressive(Quiz $quiz, array $data)
+    {
+        $questions = $quiz->questions->keyBy('id');
+        $submittedAnswers = collect($data['answers'] ?? [])
+            ->filter(fn ($answer) => isset($answer['question_id']))
+            ->keyBy('question_id');
+
+        // Score par stade = nombre de "Oui"
+        $stageScores = [];
+        $globalScore = 0.0;
+
+        $submission = DB::transaction(function () use ($quiz, $data, $questions, $submittedAnswers, &$stageScores, &$globalScore) {
+            $submission = Submission::create([
+                'user_id' => null,
+                'quiz_id' => $quiz->id,
+                'participant_nom' => $data['nom'],
+                'participant_prenom' => $data['prenom'],
+                'participant_referentiel' => $data['referentiel'],
+                'score' => 0,
+                'total_points' => (float) $quiz->questions->sum('points'),
+                'percentage' => 0,
+                'note_sur_20' => 0,
+                'submitted_at' => now(),
+            ]);
+
+            foreach ($submittedAnswers as $answer) {
+                $question = $questions->get($answer['question_id']);
+                if (!$question) {
+                    continue;
+                }
+
+                $choice = null;
+                if (!empty($answer['choice_id'])) {
+                    $choice = Choice::where('id', $answer['choice_id'])
+                        ->where('question_id', $question->id)
+                        ->first();
+                }
+
+                $isOui = $choice ? (bool) $choice->is_correct : false;
+                $points = $isOui ? 1.0 : 0.0;
+                $globalScore += $points;
+
+                $stage = (int) $question->stage;
+                $stageScores[$stage] = ($stageScores[$stage] ?? 0) + ($isOui ? 1 : 0);
+
+                $submission->answers()->create([
+                    'question_id' => $question->id,
+                    'choice_id' => $choice?->id,
+                    'is_correct' => $isOui,
+                    'points_awarded' => $points,
+                ]);
+            }
+
+            return $submission;
+        });
+
+        // Déterminer le stade atteint : dernier stade dont le score >= seuil
+        $threshold = (int) $quiz->stage_threshold;
+        ksort($stageScores);
+        $stadeAtteint = 1;
+        foreach ($stageScores as $stage => $oui) {
+            if ($oui >= $threshold) {
+                $stadeAtteint = max($stadeAtteint, $stage);
+            }
+        }
+
+        $submission->update([
+            'score' => $globalScore,
+            'stade_atteint' => $stadeAtteint,
+            'stage_scores' => $stageScores,
+        ]);
+
+        return response()->json([
+            'message' => 'Diagnostic terminé.',
+            'submission' => $submission->fresh(),
+            'stade_atteint' => $stadeAtteint,
+            'stage_scores' => $stageScores,
         ], 201);
     }
 }

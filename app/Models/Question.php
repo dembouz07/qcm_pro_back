@@ -14,6 +14,7 @@ class Question extends Model
         'body',
         'points',
         'order_index',
+        'stage',
     ];
 
     protected function casts(): array
@@ -21,6 +22,7 @@ class Question extends Model
         return [
             'points' => 'integer',
             'order_index' => 'integer',
+            'stage' => 'integer',
         ];
     }
 

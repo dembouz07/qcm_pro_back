@@ -19,6 +19,8 @@ class Submission extends Model
         'total_points',
         'percentage',
         'note_sur_20',
+        'stade_atteint',
+        'stage_scores',
         'submitted_at',
     ];
 
@@ -29,6 +31,8 @@ class Submission extends Model
             'total_points' => 'float',
             'percentage' => 'float',
             'note_sur_20' => 'float',
+            'stade_atteint' => 'integer',
+            'stage_scores' => 'array',
             'submitted_at' => 'datetime',
         ];
     }
