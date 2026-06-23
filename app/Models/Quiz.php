@@ -18,6 +18,7 @@ class Quiz extends Model
         'starts_at',
         'ends_at',
         'is_published',
+        'access_token',
     ];
 
     protected function casts(): array

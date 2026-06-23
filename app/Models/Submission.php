@@ -12,6 +12,9 @@ class Submission extends Model
     protected $fillable = [
         'user_id',
         'quiz_id',
+        'participant_nom',
+        'participant_prenom',
+        'participant_referentiel',
         'score',
         'total_points',
         'percentage',

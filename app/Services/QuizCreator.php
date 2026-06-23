@@ -6,6 +6,7 @@ use App\Models\Quiz;
 use App\Models\User;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class QuizCreator
@@ -23,6 +24,7 @@ class QuizCreator
                 'starts_at' => $data['starts_at'],
                 'ends_at' => $data['ends_at'] ?? null,
                 'is_published' => $data['is_published'] ?? true,
+                'access_token' => Str::random(32),
             ]);
 
             $this->createQuestions($quiz, $data['questions']);

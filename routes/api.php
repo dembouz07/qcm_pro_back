@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\PublicQuizController;
 use App\Http\Controllers\Api\Admin\SchoolClassController;
 use App\Http\Controllers\Api\Admin\QuizController;
 use App\Http\Controllers\Api\Admin\QuizImportController;
@@ -11,6 +12,13 @@ use App\Http\Middleware\EnsureRole;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/classes', [SchoolClassController::class, 'publicIndex']);
+
+// Routes publiques pour accès au QCM via lien (sans authentification)
+Route::prefix('public/quiz')->group(function () {
+    Route::get('/{token}', [PublicQuizController::class, 'show']);
+    Route::post('/{token}/start', [PublicQuizController::class, 'start']);
+    Route::post('/{token}/submit', [PublicQuizController::class, 'submit']);
+});
 
 Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);

@@ -21,7 +21,11 @@ class QuizController extends Controller
 
     public function show(Quiz $quiz)
     {
-        return $quiz->load('schoolClass', 'questions.choices');
+        $quiz->load('schoolClass', 'questions.choices');
+        $quiz->public_link = $quiz->access_token
+            ? url("/api/public/quiz/{$quiz->access_token}")
+            : null;
+        return $quiz;
     }
 
     public function store(Request $request, QuizCreator $creator)
