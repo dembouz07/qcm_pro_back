@@ -338,6 +338,10 @@ class QuizImportController extends Controller
             // Sinon, c'est un choix rattaché à la question courante.
             if ($choice !== null && $currentQuestion !== null) {
                 $currentChoices[] = $choice;
+            } elseif ($choice === null && $currentQuestion !== null && empty($currentChoices)) {
+                // Ligne de continuation : le texte de la question s'étend sur plusieurs lignes
+                // (tant qu'aucun choix n'a encore été rencontré).
+                $currentQuestion = trim($currentQuestion . ' ' . $line);
             }
         }
 
