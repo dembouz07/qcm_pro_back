@@ -10,17 +10,19 @@ use Illuminate\Validation\Rule;
 
 class QuizController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
         return Quiz::query()
+            ->where('created_by', $request->user()->id)
             ->with('schoolClass')
             ->withCount(['questions', 'submissions'])
             ->latest('starts_at')
             ->get();
     }
 
-    public function show(Quiz $quiz)
+    public function show(Request $request, Quiz $quiz)
     {
+        $this->authorizeOwner($request, $quiz);
         $quiz->load('schoolClass', 'questions.choices');
         $quiz->public_link = $quiz->access_token
             ? url("/api/public/quiz/{$quiz->access_token}")
@@ -39,6 +41,8 @@ class QuizController extends Controller
 
     public function update(Request $request, Quiz $quiz, QuizCreator $creator)
     {
+        $this->authorizeOwner($request, $quiz);
+
         if ($quiz->submissions()->exists()) {
             return response()->json([
                 'message' => 'Impossible de modifier les questions : ce QCM a déjà des soumissions.',
@@ -51,11 +55,20 @@ class QuizController extends Controller
         return response()->json($quiz);
     }
 
-    public function destroy(Quiz $quiz)
+    public function destroy(Request $request, Quiz $quiz)
     {
+        $this->authorizeOwner($request, $quiz);
+
         $quiz->delete();
 
         return response()->json(['message' => 'QCM supprimé.']);
+    }
+
+    private function authorizeOwner(Request $request, Quiz $quiz): void
+    {
+        if ((int) $quiz->created_by !== (int) $request->user()->id) {
+            abort(response()->json(['message' => "Ce QCM ne vous appartient pas."], 403));
+        }
     }
 
     private function validatedData(Request $request): array
@@ -63,7 +76,7 @@ class QuizController extends Controller
         return $request->validate([
             'title' => ['required', 'string', 'max:190'],
             'description' => ['nullable', 'string'],
-            'school_class_id' => ['required', Rule::exists('school_classes', 'id')],
+            'school_class_id' => ['required', Rule::exists('school_classes', 'id')->where('owner_id', $request->user()->id)],
             'starts_at' => ['required', 'date'],
             'ends_at' => ['nullable', 'date', 'after:starts_at'],
             'is_published' => ['sometimes', 'boolean'],

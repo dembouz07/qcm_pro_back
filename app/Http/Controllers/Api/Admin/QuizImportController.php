@@ -58,7 +58,7 @@ class QuizImportController extends Controller
         $data = Validator::make($data, [
             'title' => ['required', 'string', 'max:190'],
             'description' => ['nullable', 'string'],
-            'school_class_id' => ['required', Rule::exists('school_classes', 'id')],
+            'school_class_id' => ['required', Rule::exists('school_classes', 'id')->where('owner_id', $request->user()->id)],
             'starts_at' => ['required', 'date'],
             'ends_at' => ['nullable', 'date', 'after:starts_at'],
             'questions' => ['required', 'array', 'min:1'],

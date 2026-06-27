@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\SchoolClass;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -18,15 +19,23 @@ class AuthController extends Controller
             'name' => ['required', 'string', 'max:120'],
             'email' => ['required', 'email', 'max:190', 'unique:users,email'],
             'password' => ['required', 'confirmed', Password::min(8)],
-            'school_class_id' => ['required', Rule::exists('school_classes', 'id')],
+            'class_code' => ['required', 'string', 'max:30'],
         ]);
+
+        $class = SchoolClass::where('code', strtoupper(trim($data['class_code'])))->first();
+
+        if (!$class) {
+            throw ValidationException::withMessages([
+                'class_code' => 'Code de classe invalide. Demandez le code à votre formateur.',
+            ]);
+        }
 
         $user = User::create([
             'name' => $data['name'],
             'email' => $data['email'],
             'password' => Hash::make($data['password']),
             'role' => 'student',
-            'school_class_id' => $data['school_class_id'],
+            'school_class_id' => $class->id,
         ])->load('schoolClass');
 
         return response()->json([

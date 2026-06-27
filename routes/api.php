@@ -12,8 +12,6 @@ use App\Http\Controllers\Api\Student\StudentQuizController;
 use App\Http\Middleware\EnsureRole;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/classes', [SchoolClassController::class, 'publicIndex']);
-
 // Routes publiques pour accès au QCM via lien (sans authentification)
 Route::prefix('public/quiz')->group(function () {
     Route::get('/{token}', [PublicQuizController::class, 'show']);

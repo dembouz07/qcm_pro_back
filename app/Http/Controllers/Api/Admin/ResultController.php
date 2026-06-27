@@ -10,7 +10,10 @@ class ResultController extends Controller
 {
     public function index(Request $request)
     {
+        $adminId = $request->user()->id;
+
         $query = Submission::query()
+            ->whereHas('quiz', fn ($q) => $q->where('created_by', $adminId))
             ->with([
                 'user.schoolClass',
                 'quiz.schoolClass',
@@ -30,8 +33,12 @@ class ResultController extends Controller
         return $query->get();
     }
 
-    public function show(Submission $submission)
+    public function show(Request $request, Submission $submission)
     {
+        if ((int) $submission->quiz?->created_by !== (int) $request->user()->id) {
+            abort(response()->json(['message' => 'Accès refusé.'], 403));
+        }
+
         return $submission->load([
             'user.schoolClass',
             'quiz.schoolClass',

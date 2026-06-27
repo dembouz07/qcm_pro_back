@@ -21,6 +21,10 @@ class ProgressiveQuizController extends Controller
 
     public function update(Request $request, Quiz $quiz, ProgressiveQuizCreator $creator)
     {
+        if ((int) $quiz->created_by !== (int) $request->user()->id) {
+            abort(response()->json(['message' => "Ce QCM ne vous appartient pas."], 403));
+        }
+
         if ($quiz->submissions()->exists()) {
             return response()->json([
                 'message' => 'Impossible de modifier : ce diagnostic a déjà des réponses.',
@@ -39,7 +43,7 @@ class ProgressiveQuizController extends Controller
             'title' => ['required', 'string', 'max:190'],
             'description' => ['nullable', 'string'],
             'stage_threshold' => ['required', 'integer', 'min:1', 'max:20'],
-            'school_class_id' => ['required', Rule::exists('school_classes', 'id')],
+            'school_class_id' => ['required', Rule::exists('school_classes', 'id')->where('owner_id', $request->user()->id)],
             'starts_at' => ['required', 'date'],
             'ends_at' => ['nullable', 'date', 'after:starts_at'],
             'is_published' => ['sometimes', 'boolean'],
