@@ -142,6 +142,43 @@ class PublicQuizController extends Controller
     }
 
     /**
+     * Permet à un participant public de retrouver toutes ses notes
+     * (sur les différents tests) à partir de son identité.
+     */
+    public function myResults(Request $request)
+    {
+        $data = $request->validate([
+            'nom' => ['required', 'string', 'max:100'],
+            'prenom' => ['required', 'string', 'max:100'],
+            'referentiel' => ['nullable', 'string', 'max:200'],
+        ]);
+
+        $query = Submission::query()
+            ->with('quiz')
+            ->where('participant_nom', $data['nom'])
+            ->where('participant_prenom', $data['prenom']);
+
+        if (!empty($data['referentiel'])) {
+            $query->where('participant_referentiel', $data['referentiel']);
+        }
+
+        $submissions = $query->latest('submitted_at')->get()->map(fn ($s) => [
+            'id' => $s->id,
+            'quiz_title' => $s->quiz?->title,
+            'quiz_type' => $s->quiz?->type,
+            'note_sur_20' => $s->note_sur_20,
+            'score' => $s->score,
+            'total_points' => $s->total_points,
+            'percentage' => $s->percentage,
+            'stade_atteint' => $s->stade_atteint,
+            'referentiel' => $s->participant_referentiel,
+            'submitted_at' => $s->submitted_at,
+        ]);
+
+        return response()->json(['data' => $submissions]);
+    }
+
+    /**
      * Soumettre les réponses en mode public (sans auth).
      */
     public function submit(Request $request, string $token)

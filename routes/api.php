@@ -21,6 +21,9 @@ Route::prefix('public/quiz')->group(function () {
     Route::post('/{token}/submit', [PublicQuizController::class, 'submit']);
 });
 
+// Permet à un participant de retrouver ses notes via son identité
+Route::post('public/my-results', [PublicQuizController::class, 'myResults']);
+
 Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/login', [AuthController::class, 'login']);
