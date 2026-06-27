@@ -25,6 +25,19 @@ class SchoolClassController extends Controller
             ->get();
     }
 
+    public function show(SchoolClass $class)
+    {
+        return response()->json([
+            'id' => $class->id,
+            'name' => $class->name,
+            'code' => $class->code,
+            'students' => $class->users()
+                ->where('role', 'student')
+                ->orderBy('name')
+                ->get(['id', 'name', 'email']),
+        ]);
+    }
+
     public function store(Request $request)
     {
         $data = $request->validate([
