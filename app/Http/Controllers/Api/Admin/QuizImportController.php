@@ -323,7 +323,14 @@ class QuizImportController extends Controller
 
             // Une question : ligne numérotée (ex "1.") qui n'est pas un choix,
             // ou une ligne contenant "?" qui n'est pas un choix.
-            if (($isNumberedQuestion || str_contains($line, '?')) && $choice === null) {
+            // ATTENTION : une ligne avec "?" non numérotée, alors qu'une question est en cours
+            // et n'a encore aucun choix, est une CONTINUATION (question sur plusieurs lignes),
+            // pas une nouvelle question.
+            $looksLikeQuestion = $isNumberedQuestion || str_contains($line, '?');
+            $startNewQuestion = $looksLikeQuestion && $choice === null
+                && ($isNumberedQuestion || $currentQuestion === null || !empty($currentChoices));
+
+            if ($startNewQuestion) {
                 if ($currentQuestion !== null && !empty($currentChoices)) {
                     $questions[] = $this->finalizeQuestion($currentQuestion, $currentChoices);
                 }
