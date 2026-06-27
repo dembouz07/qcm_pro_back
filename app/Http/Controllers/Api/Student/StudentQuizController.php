@@ -60,6 +60,34 @@ class StudentQuizController extends Controller
         ]);
     }
 
+    /**
+     * Liste les notes (soumissions) de l'élève connecté, tous QCM confondus.
+     */
+    public function results(Request $request)
+    {
+        $user = $request->user();
+
+        $submissions = Submission::query()
+            ->with('quiz.schoolClass')
+            ->where('user_id', $user->id)
+            ->latest('submitted_at')
+            ->get()
+            ->map(fn (Submission $s) => [
+                'id' => $s->id,
+                'quiz_title' => $s->quiz?->title,
+                'quiz_type' => $s->quiz?->type,
+                'school_class' => $s->quiz?->schoolClass?->name,
+                'score' => $s->score,
+                'total_points' => $s->total_points,
+                'percentage' => $s->percentage,
+                'note_sur_20' => $s->note_sur_20,
+                'stade_atteint' => $s->stade_atteint,
+                'submitted_at' => $s->submitted_at,
+            ]);
+
+        return response()->json(['data' => $submissions]);
+    }
+
     public function show(Request $request, Quiz $quiz)
     {
         $this->ensureStudentCanAccessQuiz($request, $quiz);
