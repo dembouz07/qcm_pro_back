@@ -44,6 +44,32 @@ class AuthController extends Controller
         ], 201);
     }
 
+    /**
+     * Inscription d'un administrateur (formateur).
+     * L'accès aux fonctionnalités est conditionné à un abonnement actif.
+     */
+    public function registerAdmin(Request $request)
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:120'],
+            'email' => ['required', 'email', 'max:190', 'unique:users,email'],
+            'password' => ['required', 'confirmed', Password::min(8)],
+        ]);
+
+        $user = User::create([
+            'name' => $data['name'],
+            'email' => $data['email'],
+            'password' => Hash::make($data['password']),
+            'role' => 'admin',
+            'subscription_status' => 'inactive',
+        ]);
+
+        return response()->json([
+            'token' => $user->createToken('web')->plainTextToken,
+            'user' => $user,
+        ], 201);
+    }
+
     public function login(Request $request)
     {
         $credentials = $request->validate([

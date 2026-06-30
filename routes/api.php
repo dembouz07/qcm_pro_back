@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\PublicQuizController;
+use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\Admin\SchoolClassController;
 use App\Http\Controllers\Api\Admin\QuizController;
 use App\Http\Controllers\Api\Admin\QuizImportController;
@@ -10,6 +11,7 @@ use App\Http\Controllers\Api\Admin\ProgressiveQuizController;
 use App\Http\Controllers\Api\Admin\ResultController;
 use App\Http\Controllers\Api\Student\StudentQuizController;
 use App\Http\Middleware\EnsureRole;
+use App\Http\Middleware\EnsureSubscribed;
 use Illuminate\Support\Facades\Route;
 
 // Routes publiques pour accès au QCM via lien (sans authentification)
@@ -22,8 +24,12 @@ Route::prefix('public/quiz')->group(function () {
 // Permet à un participant de retrouver ses notes via son identité
 Route::post('public/my-results', [PublicQuizController::class, 'myResults']);
 
+// Callback IPN PayDunya (public)
+Route::post('payments/paydunya/callback', [SubscriptionController::class, 'callback']);
+
 Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
+    Route::post('/register-admin', [AuthController::class, 'registerAdmin']);
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('/check-email', [AuthController::class, 'checkEmail']);
@@ -37,20 +43,28 @@ Route::prefix('auth')->group(function () {
 Route::prefix('admin')
     ->middleware(['auth:sanctum', EnsureRole::class . ':admin'])
     ->group(function () {
-        Route::apiResource('classes', SchoolClassController::class)->parameters([
-            'classes' => 'class',
-        ]);
+        // Abonnement (accessible même sans abonnement actif)
+        Route::get('subscription', [SubscriptionController::class, 'status']);
+        Route::post('subscription/checkout', [SubscriptionController::class, 'checkout']);
+        Route::post('subscription/verify', [SubscriptionController::class, 'verify']);
 
-        Route::apiResource('quizzes', QuizController::class);
-        Route::post('quizzes/import', [QuizImportController::class, 'store']);
-        Route::post('quizzes/convert', [QuizConverterController::class, 'convert']);
+        // Fonctionnalités nécessitant un abonnement actif
+        Route::middleware(EnsureSubscribed::class)->group(function () {
+            Route::apiResource('classes', SchoolClassController::class)->parameters([
+                'classes' => 'class',
+            ]);
 
-        // QCM progressifs (diagnostic par stades)
-        Route::post('progressive-quizzes', [ProgressiveQuizController::class, 'store']);
-        Route::put('progressive-quizzes/{quiz}', [ProgressiveQuizController::class, 'update']);
+            Route::apiResource('quizzes', QuizController::class);
+            Route::post('quizzes/import', [QuizImportController::class, 'store']);
+            Route::post('quizzes/convert', [QuizConverterController::class, 'convert']);
 
-        Route::get('results', [ResultController::class, 'index']);
-        Route::get('results/{submission}', [ResultController::class, 'show']);
+            // QCM progressifs (diagnostic par stades)
+            Route::post('progressive-quizzes', [ProgressiveQuizController::class, 'store']);
+            Route::put('progressive-quizzes/{quiz}', [ProgressiveQuizController::class, 'update']);
+
+            Route::get('results', [ResultController::class, 'index']);
+            Route::get('results/{submission}', [ResultController::class, 'show']);
+        });
     });
 
 Route::prefix('student')

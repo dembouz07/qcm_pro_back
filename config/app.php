@@ -17,6 +17,15 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Code d'inscription administrateur
+    |--------------------------------------------------------------------------
+    | Code secret requis pour créer un compte administrateur (formateur).
+    | À définir via la variable d'environnement ADMIN_REGISTRATION_CODE.
+    */
+    'admin_registration_code' => env('ADMIN_REGISTRATION_CODE', ''),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Environment
     |--------------------------------------------------------------------------
     |

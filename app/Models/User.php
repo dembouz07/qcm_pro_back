@@ -17,6 +17,8 @@ class User extends Authenticatable
         'password',
         'role',
         'school_class_id',
+        'subscription_status',
+        'subscribed_until',
     ];
 
     protected $hidden = [
@@ -29,7 +31,20 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'subscribed_until' => 'datetime',
         ];
+    }
+
+    public function hasActiveSubscription(): bool
+    {
+        return $this->subscription_status === 'active'
+            && $this->subscribed_until !== null
+            && $this->subscribed_until->isFuture();
+    }
+
+    public function payments()
+    {
+        return $this->hasMany(Payment::class);
     }
 
     public function schoolClass()

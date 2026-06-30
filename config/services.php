@@ -35,4 +35,15 @@ return [
         ],
     ],
 
+    'paydunya' => [
+        'mode' => env('PAYDUNYA_MODE', 'test'), // 'test' (sandbox) ou 'live'
+        'master_key' => env('PAYDUNYA_MASTER_KEY'),
+        'private_key' => env('PAYDUNYA_PRIVATE_KEY'),
+        'public_key' => env('PAYDUNYA_PUBLIC_KEY'),
+        'token' => env('PAYDUNYA_TOKEN'),
+        'store_name' => env('PAYDUNYA_STORE_NAME', 'QCM Pro'),
+        'amount' => (int) env('SUBSCRIPTION_AMOUNT', 1000),
+        'frontend_url' => env('FRONTEND_URL', 'https://qcm-nine.vercel.app'),
+    ],
+
 ];
