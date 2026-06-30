@@ -43,6 +43,7 @@ return [
         'token' => env('PAYDUNYA_TOKEN'),
         'store_name' => env('PAYDUNYA_STORE_NAME', 'QCM Pro'),
         'amount' => (int) env('SUBSCRIPTION_AMOUNT', 1000),
+        'trial_days' => (int) env('SUBSCRIPTION_TRIAL_DAYS', 30),
         'frontend_url' => env('FRONTEND_URL', 'https://qcm-nine.vercel.app'),
     ],
 

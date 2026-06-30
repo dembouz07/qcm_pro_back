@@ -56,12 +56,16 @@ class AuthController extends Controller
             'password' => ['required', 'confirmed', Password::min(8)],
         ]);
 
+        // Essai gratuit à l'inscription (1er mois offert)
+        $trialDays = (int) config('services.paydunya.trial_days', 30);
+
         $user = User::create([
             'name' => $data['name'],
             'email' => $data['email'],
             'password' => Hash::make($data['password']),
             'role' => 'admin',
-            'subscription_status' => 'inactive',
+            'subscription_status' => $trialDays > 0 ? 'active' : 'inactive',
+            'subscribed_until' => $trialDays > 0 ? now()->addDays($trialDays) : null,
         ]);
 
         return response()->json([
