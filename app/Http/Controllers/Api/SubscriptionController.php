@@ -29,17 +29,17 @@ class SubscriptionController extends Controller
      */
     public function checkout(Request $request, PayDunyaService $paydunya)
     {
-        if (!$paydunya->isConfigured()) {
-            return response()->json([
-                'message' => "Le paiement n'est pas encore configuré. Contactez l'administrateur.",
-            ], 503);
-        }
-
-        $user = $request->user();
-        $amount = (int) config('services.paydunya.amount');
-        $frontend = rtrim(config('services.paydunya.frontend_url'), '/');
-
         try {
+            if (!$paydunya->isConfigured()) {
+                return response()->json([
+                    'message' => "Le paiement n'est pas encore configuré. Contactez l'administrateur.",
+                ], 503);
+            }
+
+            $user = $request->user();
+            $amount = (int) config('services.paydunya.amount');
+            $frontend = rtrim((string) config('services.paydunya.frontend_url'), '/');
+
             $invoice = $paydunya->createInvoice([
                 'amount' => $amount,
                 'description' => "Abonnement mensuel QCM Pro - {$user->email}",
@@ -48,28 +48,30 @@ class SubscriptionController extends Controller
                 'callback_url' => url('/api/payments/paydunya/callback'),
                 'custom_data' => ['user_id' => $user->id],
             ]);
+
+            if (!$invoice) {
+                return response()->json([
+                    'message' => "Impossible de créer la facture. Vérifiez la configuration PayDunya.",
+                ], 502);
+            }
+
+            Payment::create([
+                'user_id' => $user->id,
+                'provider' => 'paydunya',
+                'token' => $invoice['token'],
+                'amount' => $amount,
+                'currency' => 'XOF',
+                'status' => 'pending',
+            ]);
+
+            return response()->json(['url' => $invoice['url']]);
         } catch (\Throwable $e) {
+            // Diagnostic : renvoie le message réel (à retirer plus tard)
             return response()->json([
-                'message' => "Erreur lors de la connexion au service de paiement.",
-            ], 502);
+                'message' => 'Erreur checkout : ' . $e->getMessage(),
+                'file' => basename($e->getFile()) . ':' . $e->getLine(),
+            ], 500);
         }
-
-        if (!$invoice) {
-            return response()->json([
-                'message' => "Impossible de créer la facture de paiement. Vérifiez la configuration PayDunya.",
-            ], 502);
-        }
-
-        Payment::create([
-            'user_id' => $user->id,
-            'provider' => 'paydunya',
-            'token' => $invoice['token'],
-            'amount' => $amount,
-            'currency' => 'XOF',
-            'status' => 'pending',
-        ]);
-
-        return response()->json(['url' => $invoice['url']]);
     }
 
     /**
