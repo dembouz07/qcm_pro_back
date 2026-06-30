@@ -11,50 +11,6 @@ use Illuminate\Support\Carbon;
 
 class SubscriptionController extends Controller
 {
-    /**
-     * Endpoint de debug public : teste l'appel PayDunya et renvoie le résultat exact.
-     * À SUPPRIMER après diagnostic.
-     */
-    public function debug(PayDunyaService $paydunya)
-    {
-        try {
-            $mode = config('services.paydunya.mode');
-            $base = $mode === 'live'
-                ? 'https://app.paydunya.com/api/v1'
-                : 'https://app.paydunya.com/sandbox-api/v1';
-
-            $resp = \Illuminate\Support\Facades\Http::timeout(10)
-                ->connectTimeout(8)
-                ->withHeaders([
-                    'PAYDUNYA-MASTER-KEY' => config('services.paydunya.master_key'),
-                    'PAYDUNYA-PRIVATE-KEY' => config('services.paydunya.private_key'),
-                    'PAYDUNYA-TOKEN' => config('services.paydunya.token'),
-                    'Content-Type' => 'application/json',
-                ])->post($base . '/checkout-invoice/create', [
-                    'invoice' => ['total_amount' => 1000, 'description' => 'Debug'],
-                    'store' => ['name' => config('services.paydunya.store_name')],
-                    'actions' => [
-                        'cancel_url' => 'https://qcm-nine.vercel.app/admin/subscription?canceled=1',
-                        'return_url' => 'https://qcm-nine.vercel.app/admin/subscription?paid=1',
-                        'callback_url' => url('/api/payments/paydunya/callback'),
-                    ],
-                ]);
-
-            return response()->json([
-                'mode' => $mode,
-                'http_status' => $resp->status(),
-                'paydunya_response' => $resp->json() ?? $resp->body(),
-                'master_key_prefix' => substr((string) config('services.paydunya.master_key'), 0, 6),
-                'token_prefix' => substr((string) config('services.paydunya.token'), 0, 6),
-            ]);
-        } catch (\Throwable $e) {
-            return response()->json([
-                'error' => $e->getMessage(),
-                'class' => get_class($e),
-            ], 500);
-        }
-    }
-
     public function status(Request $request)
     {
         $user = $request->user();
@@ -110,10 +66,9 @@ class SubscriptionController extends Controller
 
             return response()->json(['url' => $invoice['url']]);
         } catch (\Throwable $e) {
-            // Diagnostic : renvoie le message réel (à retirer plus tard)
+            \Log::error('Checkout error: ' . $e->getMessage());
             return response()->json([
-                'message' => 'Erreur checkout : ' . $e->getMessage(),
-                'file' => basename($e->getFile()) . ':' . $e->getLine(),
+                'message' => "Une erreur est survenue lors de l'initialisation du paiement. Réessayez.",
             ], 500);
         }
     }

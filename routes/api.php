@@ -26,8 +26,6 @@ Route::post('public/my-results', [PublicQuizController::class, 'myResults']);
 
 // Callback IPN PayDunya (public)
 Route::post('payments/paydunya/callback', [SubscriptionController::class, 'callback']);
-// Debug temporaire (public) - à retirer après diagnostic
-Route::get('paydunya-debug', [SubscriptionController::class, 'debug']);
 
 Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
