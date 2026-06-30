@@ -53,8 +53,8 @@ class PayDunyaService
         ];
 
         try {
-            $response = Http::timeout(20)
-                ->connectTimeout(10)
+            $response = Http::timeout(8)
+                ->connectTimeout(5)
                 ->withHeaders($this->headers())
                 ->post($this->baseUrl() . '/checkout-invoice/create', $payload);
         } catch (\Throwable $e) {
@@ -81,8 +81,8 @@ class PayDunyaService
     public function confirm(string $token): array
     {
         try {
-            $response = Http::timeout(20)
-                ->connectTimeout(10)
+            $response = Http::timeout(8)
+                ->connectTimeout(5)
                 ->withHeaders($this->headers())
                 ->get($this->baseUrl() . '/checkout-invoice/confirm/' . $token);
         } catch (\Throwable $e) {
