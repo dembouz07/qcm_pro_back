@@ -39,18 +39,24 @@ class SubscriptionController extends Controller
         $amount = (int) config('services.paydunya.amount');
         $frontend = rtrim(config('services.paydunya.frontend_url'), '/');
 
-        $invoice = $paydunya->createInvoice([
-            'amount' => $amount,
-            'description' => "Abonnement mensuel QCM Pro - {$user->email}",
-            'return_url' => $frontend . '/admin/subscription?paid=1',
-            'cancel_url' => $frontend . '/admin/subscription?canceled=1',
-            'callback_url' => url('/api/payments/paydunya/callback'),
-            'custom_data' => ['user_id' => $user->id],
-        ]);
+        try {
+            $invoice = $paydunya->createInvoice([
+                'amount' => $amount,
+                'description' => "Abonnement mensuel QCM Pro - {$user->email}",
+                'return_url' => $frontend . '/admin/subscription?paid=1',
+                'cancel_url' => $frontend . '/admin/subscription?canceled=1',
+                'callback_url' => url('/api/payments/paydunya/callback'),
+                'custom_data' => ['user_id' => $user->id],
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => "Erreur lors de la connexion au service de paiement.",
+            ], 502);
+        }
 
         if (!$invoice) {
             return response()->json([
-                'message' => "Impossible de créer la facture de paiement. Réessayez.",
+                'message' => "Impossible de créer la facture de paiement. Vérifiez la configuration PayDunya.",
             ], 502);
         }
 

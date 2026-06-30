@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class PayDunyaService
 {
@@ -51,8 +52,15 @@ class PayDunyaService
             'custom_data' => $params['custom_data'] ?? [],
         ];
 
-        $response = Http::withHeaders($this->headers())
-            ->post($this->baseUrl() . '/checkout-invoice/create', $payload);
+        try {
+            $response = Http::timeout(20)
+                ->connectTimeout(10)
+                ->withHeaders($this->headers())
+                ->post($this->baseUrl() . '/checkout-invoice/create', $payload);
+        } catch (\Throwable $e) {
+            Log::error('PayDunya createInvoice error: ' . $e->getMessage());
+            return null;
+        }
 
         $data = $response->json();
 
@@ -63,6 +71,7 @@ class PayDunyaService
             ];
         }
 
+        Log::warning('PayDunya createInvoice refuse', ['body' => $response->body()]);
         return null;
     }
 
@@ -71,8 +80,15 @@ class PayDunyaService
      */
     public function confirm(string $token): array
     {
-        $response = Http::withHeaders($this->headers())
-            ->get($this->baseUrl() . '/checkout-invoice/confirm/' . $token);
+        try {
+            $response = Http::timeout(20)
+                ->connectTimeout(10)
+                ->withHeaders($this->headers())
+                ->get($this->baseUrl() . '/checkout-invoice/confirm/' . $token);
+        } catch (\Throwable $e) {
+            Log::error('PayDunya confirm error: ' . $e->getMessage());
+            return [];
+        }
 
         return $response->json() ?? [];
     }
