@@ -11,6 +11,37 @@ use Illuminate\Support\Carbon;
 
 class SubscriptionController extends Controller
 {
+    /**
+     * Endpoint de debug public : teste l'appel PayDunya et renvoie le résultat exact.
+     * À SUPPRIMER après diagnostic.
+     */
+    public function debug(PayDunyaService $paydunya)
+    {
+        try {
+            $frontend = rtrim((string) config('services.paydunya.frontend_url'), '/');
+            $invoice = $paydunya->createInvoice([
+                'amount' => (int) config('services.paydunya.amount'),
+                'description' => 'Debug QCM Pro',
+                'return_url' => $frontend . '/admin/subscription?paid=1',
+                'cancel_url' => $frontend . '/admin/subscription?canceled=1',
+                'callback_url' => url('/api/payments/paydunya/callback'),
+                'custom_data' => ['debug' => true],
+            ]);
+
+            return response()->json([
+                'configured' => $paydunya->isConfigured(),
+                'mode' => config('services.paydunya.mode'),
+                'invoice' => $invoice,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'error' => $e->getMessage(),
+                'class' => get_class($e),
+                'where' => basename($e->getFile()) . ':' . $e->getLine(),
+            ], 500);
+        }
+    }
+
     public function status(Request $request)
     {
         $user = $request->user();
