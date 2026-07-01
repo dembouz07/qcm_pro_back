@@ -16,6 +16,7 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'is_blocked',
         'school_class_id',
         'subscription_status',
         'subscribed_until',
@@ -34,6 +35,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'subscribed_until' => 'datetime',
+            'is_blocked' => 'boolean',
         ];
     }
 
@@ -43,6 +45,14 @@ class User extends Authenticatable
         return in_array(strtolower((string) $this->email), $supers, true);
     }
 
+    /**
+     * Super-administrateur de plateforme (rôle dédié).
+     */
+    public function isPlatformAdmin(): bool
+    {
+        return $this->role === 'superadmin';
+    }
+
     public function getIsSuperAdminAttribute(): bool
     {
         return $this->isSuperAdmin();
@@ -50,7 +60,7 @@ class User extends Authenticatable
 
     public function hasActiveSubscription(): bool
     {
-        if ($this->isSuperAdmin()) {
+        if ($this->isSuperAdmin() || $this->isPlatformAdmin()) {
             return true;
         }
 

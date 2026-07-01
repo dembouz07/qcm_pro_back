@@ -10,6 +10,9 @@ use App\Http\Controllers\Api\Admin\QuizConverterController;
 use App\Http\Controllers\Api\Admin\ProgressiveQuizController;
 use App\Http\Controllers\Api\Admin\ResultController;
 use App\Http\Controllers\Api\Student\StudentQuizController;
+use App\Http\Controllers\Api\SuperAdmin\StatsController;
+use App\Http\Controllers\Api\SuperAdmin\UserController as SuperAdminUserController;
+use App\Http\Middleware\EnsureNotBlocked;
 use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\EnsureSubscribed;
 use Illuminate\Support\Facades\Route;
@@ -41,7 +44,7 @@ Route::prefix('auth')->group(function () {
 });
 
 Route::prefix('admin')
-    ->middleware(['auth:sanctum', EnsureRole::class . ':admin'])
+    ->middleware(['auth:sanctum', EnsureNotBlocked::class, EnsureRole::class . ':admin'])
     ->group(function () {
         // Abonnement (accessible même sans abonnement actif)
         Route::get('subscription', [SubscriptionController::class, 'status']);
@@ -68,10 +71,20 @@ Route::prefix('admin')
     });
 
 Route::prefix('student')
-    ->middleware(['auth:sanctum', EnsureRole::class . ':student'])
+    ->middleware(['auth:sanctum', EnsureNotBlocked::class, EnsureRole::class . ':student'])
     ->group(function () {
         Route::get('quizzes', [StudentQuizController::class, 'index']);
         Route::get('results', [StudentQuizController::class, 'results']);
         Route::get('quizzes/{quiz}', [StudentQuizController::class, 'show']);
         Route::post('quizzes/{quiz}/submit', [StudentQuizController::class, 'submit']);
+    });
+
+// Espace super-administrateur de plateforme (accès global)
+Route::prefix('superadmin')
+    ->middleware(['auth:sanctum', EnsureRole::class . ':superadmin'])
+    ->group(function () {
+        Route::get('stats', [StatsController::class, 'index']);
+        Route::get('users', [SuperAdminUserController::class, 'index']);
+        Route::post('users/{user}/block', [SuperAdminUserController::class, 'block']);
+        Route::post('users/{user}/unblock', [SuperAdminUserController::class, 'unblock']);
     });

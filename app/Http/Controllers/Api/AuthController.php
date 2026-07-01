@@ -89,6 +89,12 @@ class AuthController extends Controller
             ]);
         }
 
+        if ($user->is_blocked) {
+            throw ValidationException::withMessages([
+                'email' => 'Votre compte a été bloqué. Contactez l\'administrateur.',
+            ]);
+        }
+
         return response()->json([
             'token' => $user->createToken('web')->plainTextToken,
             'user' => $user->load('schoolClass'),
