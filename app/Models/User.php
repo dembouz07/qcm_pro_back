@@ -26,6 +26,8 @@ class User extends Authenticatable
         'remember_token',
     ];
 
+    protected $appends = ['is_super_admin'];
+
     protected function casts(): array
     {
         return [
@@ -35,8 +37,23 @@ class User extends Authenticatable
         ];
     }
 
+    public function isSuperAdmin(): bool
+    {
+        $supers = array_map('strtolower', (array) config('app.super_admins', []));
+        return in_array(strtolower((string) $this->email), $supers, true);
+    }
+
+    public function getIsSuperAdminAttribute(): bool
+    {
+        return $this->isSuperAdmin();
+    }
+
     public function hasActiveSubscription(): bool
     {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
         return $this->subscription_status === 'active'
             && $this->subscribed_until !== null
             && $this->subscribed_until->isFuture();

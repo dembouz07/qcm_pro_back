@@ -25,6 +25,15 @@ return [
     'admin_registration_code' => env('ADMIN_REGISTRATION_CODE', ''),
 
     /*
+    | Emails ayant un accès illimité (sans abonnement requis).
+    | Séparés par des virgules via SUPER_ADMIN_EMAILS.
+    */
+    'super_admins' => array_filter(array_map(
+        'trim',
+        explode(',', env('SUPER_ADMIN_EMAILS', 'admin@example.com'))
+    )),
+
+    /*
     |--------------------------------------------------------------------------
     | Application Environment
     |--------------------------------------------------------------------------
