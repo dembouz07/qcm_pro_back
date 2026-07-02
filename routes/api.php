@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\Admin\ProgressiveQuizController;
 use App\Http\Controllers\Api\Admin\ResultController;
 use App\Http\Controllers\Api\Student\StudentQuizController;
 use App\Http\Controllers\Api\SuperAdmin\StatsController;
+use App\Http\Controllers\Api\SuperAdmin\RevenueController;
 use App\Http\Controllers\Api\SuperAdmin\UserController as SuperAdminUserController;
 use App\Http\Middleware\EnsureNotBlocked;
 use App\Http\Middleware\EnsureRole;
@@ -84,6 +85,7 @@ Route::prefix('superadmin')
     ->middleware(['auth:sanctum', EnsureRole::class . ':superadmin'])
     ->group(function () {
         Route::get('stats', [StatsController::class, 'index']);
+        Route::get('revenue', [RevenueController::class, 'index']);
         Route::get('users', [SuperAdminUserController::class, 'index']);
         Route::post('users/{user}/block', [SuperAdminUserController::class, 'block']);
         Route::post('users/{user}/unblock', [SuperAdminUserController::class, 'unblock']);
