@@ -28,8 +28,8 @@ Route::prefix('public/quiz')->group(function () {
 // Permet à un participant de retrouver ses notes via son identité
 Route::post('public/my-results', [PublicQuizController::class, 'myResults']);
 
-// Callback IPN PayDunya (public)
-Route::post('payments/paydunya/callback', [SubscriptionController::class, 'callback']);
+// Notification IPN PayTech (public)
+Route::post('payments/paytech/ipn', [SubscriptionController::class, 'ipn']);
 
 Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);

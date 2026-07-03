@@ -5,9 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Payment;
 use App\Models\User;
-use App\Services\PayDunyaService;
+use App\Services\PayTechService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 
 class SubscriptionController extends Controller
 {
@@ -19,54 +20,58 @@ class SubscriptionController extends Controller
             'subscription_status' => $user->subscription_status,
             'subscribed_until' => $user->subscribed_until,
             'is_active' => $user->hasActiveSubscription(),
-            'amount' => (int) config('services.paydunya.amount'),
+            'amount' => (int) config('services.paytech.amount'),
             'currency' => 'XOF',
         ]);
     }
 
     /**
-     * Démarre un paiement PayDunya et renvoie l'URL de paiement.
+     * Démarre un paiement PayTech et renvoie l'URL de paiement.
      */
-    public function checkout(Request $request, PayDunyaService $paydunya)
+    public function checkout(Request $request, PayTechService $paytech)
     {
         try {
-            if (!$paydunya->isConfigured()) {
+            if (!$paytech->isConfigured()) {
                 return response()->json([
                     'message' => "Le paiement n'est pas encore configuré. Contactez l'administrateur.",
                 ], 503);
             }
 
             $user = $request->user();
-            $amount = (int) config('services.paydunya.amount');
-            $frontend = rtrim((string) config('services.paydunya.frontend_url'), '/');
+            $amount = (int) config('services.paytech.amount');
+            $frontend = rtrim((string) config('services.paytech.frontend_url'), '/');
+            $refCommand = 'QCMPRO_' . $user->id . '_' . time();
 
-            $invoice = $paydunya->createInvoice([
+            $payment = $paytech->requestPayment([
+                'item_name' => 'Abonnement QCM Pro',
+                'command_name' => "Abonnement mensuel QCM Pro - {$user->email}",
                 'amount' => $amount,
-                'description' => "Abonnement mensuel QCM Pro - {$user->email}",
-                'return_url' => $frontend . '/admin/subscription?paid=1',
+                'ref_command' => $refCommand,
+                'success_url' => $frontend . '/admin/subscription?paid=1',
                 'cancel_url' => $frontend . '/admin/subscription?canceled=1',
-                'callback_url' => url('/api/payments/paydunya/callback'),
-                'custom_data' => ['user_id' => $user->id],
+                'ipn_url' => url('/api/payments/paytech/ipn'),
+                'custom_field' => ['user_id' => $user->id, 'ref_command' => $refCommand],
             ]);
 
-            if (!$invoice) {
+            if (!$payment || empty($payment['token'])) {
                 return response()->json([
-                    'message' => "Impossible de créer la facture. Vérifiez la configuration PayDunya.",
+                    'message' => "Impossible de créer le paiement. Vérifiez la configuration PayTech.",
                 ], 502);
             }
 
             Payment::create([
                 'user_id' => $user->id,
-                'provider' => 'paydunya',
-                'token' => $invoice['token'],
+                'provider' => 'paytech',
+                'token' => $payment['token'],
                 'amount' => $amount,
                 'currency' => 'XOF',
                 'status' => 'pending',
+                'meta' => ['ref_command' => $refCommand],
             ]);
 
-            return response()->json(['url' => $invoice['url']]);
+            return response()->json(['url' => $payment['url']]);
         } catch (\Throwable $e) {
-            \Log::error('Checkout error: ' . $e->getMessage());
+            Log::error('PayTech checkout error: ' . $e->getMessage());
             return response()->json([
                 'message' => "Une erreur est survenue lors de l'initialisation du paiement. Réessayez.",
             ], 500);
@@ -74,24 +79,47 @@ class SubscriptionController extends Controller
     }
 
     /**
-     * Callback IPN appelé par PayDunya (public).
+     * Notification IPN appelée par PayTech (public).
      */
-    public function callback(Request $request, PayDunyaService $paydunya)
+    public function ipn(Request $request, PayTechService $paytech)
     {
-        $token = $request->input('token') ?? $request->input('data.invoice.token');
-        if (!$token) {
-            return response()->json(['message' => 'Token manquant.'], 400);
+        if (!$paytech->verifyIpn($request)) {
+            Log::warning('PayTech IPN rejeté (signature invalide)');
+            return response()->json(['message' => 'IPN KO'], 403);
         }
 
-        $this->activateFromToken($token, $paydunya);
+        $typeEvent = $request->input('type_event');
+        $token = $request->input('token');
+        $refCommand = $request->input('ref_command');
 
-        return response()->json(['message' => 'OK']);
+        $payment = null;
+        if ($token) {
+            $payment = Payment::where('token', $token)->first();
+        }
+        if (!$payment && $refCommand) {
+            $payment = Payment::where('meta->ref_command', $refCommand)->first();
+        }
+
+        if (!$payment) {
+            Log::warning('PayTech IPN : paiement introuvable', ['token' => $token, 'ref' => $refCommand]);
+            return response()->json(['message' => 'IPN OK'], 200);
+        }
+
+        if ($typeEvent === 'sale_complete') {
+            $this->markCompleted($payment, $request->all());
+        } elseif ($typeEvent === 'sale_canceled') {
+            if ($payment->status !== 'completed') {
+                $payment->update(['status' => 'failed', 'meta' => array_merge((array) $payment->meta, $request->all())]);
+            }
+        }
+
+        return response()->json(['message' => 'IPN OK'], 200);
     }
 
     /**
      * Vérification déclenchée par le frontend au retour de paiement.
      */
-    public function verify(Request $request, PayDunyaService $paydunya)
+    public function verify(Request $request, PayTechService $paytech)
     {
         $user = $request->user();
         $payment = Payment::where('user_id', $user->id)
@@ -99,8 +127,17 @@ class SubscriptionController extends Controller
             ->latest()
             ->first();
 
-        if ($payment) {
-            $this->activateFromToken($payment->token, $paydunya);
+        if ($payment && $payment->token) {
+            $result = $paytech->getStatus($payment->token);
+            // On active si PayTech confirme le paiement.
+            $state = strtolower((string) (
+                $result['status']
+                ?? ($result['payment']['status'] ?? '')
+                ?? ''
+            ));
+            if (in_array($state, ['sale_complete', 'complete', 'completed', 'success', 'paid'], true)) {
+                $this->markCompleted($payment, $result);
+            }
         }
 
         $user->refresh();
@@ -113,35 +150,30 @@ class SubscriptionController extends Controller
     }
 
     /**
-     * Confirme le paiement auprès de PayDunya et active l'abonnement (1 mois).
+     * Marque le paiement comme complété et prolonge l'abonnement d'un mois.
      */
-    private function activateFromToken(string $token, PayDunyaService $paydunya): void
+    private function markCompleted(Payment $payment, array $meta = []): void
     {
-        $payment = Payment::where('token', $token)->first();
-        if (!$payment || $payment->status === 'completed') {
+        if ($payment->status === 'completed') {
             return;
         }
 
-        $result = $paydunya->confirm($token);
-        $status = $result['status'] ?? null;
+        $payment->update([
+            'status' => 'completed',
+            'meta' => array_merge((array) $payment->meta, $meta),
+        ]);
 
-        if ($status === 'completed') {
-            $payment->update(['status' => 'completed', 'meta' => $result]);
+        $user = User::find($payment->user_id);
+        if ($user) {
+            // Prolonge à partir de la date d'expiration si encore active, sinon à partir de maintenant.
+            $base = $user->subscribed_until && $user->subscribed_until->isFuture()
+                ? $user->subscribed_until
+                : Carbon::now();
 
-            $user = User::find($payment->user_id);
-            if ($user) {
-                // Prolonge à partir de la date d'expiration si encore active, sinon à partir de maintenant
-                $base = $user->subscribed_until && $user->subscribed_until->isFuture()
-                    ? $user->subscribed_until
-                    : Carbon::now();
-
-                $user->update([
-                    'subscription_status' => 'active',
-                    'subscribed_until' => $base->copy()->addMonth(),
-                ]);
-            }
-        } elseif (in_array($status, ['cancelled', 'failed'], true)) {
-            $payment->update(['status' => 'failed', 'meta' => $result]);
+            $user->update([
+                'subscription_status' => 'active',
+                'subscribed_until' => $base->copy()->addMonth(),
+            ]);
         }
     }
 }

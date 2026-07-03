@@ -57,7 +57,7 @@ class AuthController extends Controller
         ]);
 
         // Essai gratuit à l'inscription (1er mois offert)
-        $trialDays = (int) config('services.paydunya.trial_days', 30);
+        $trialDays = (int) config('services.paytech.trial_days', 30);
 
         $user = User::create([
             'name' => $data['name'],
