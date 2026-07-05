@@ -40,6 +40,8 @@ Route::prefix('auth')->group(function () {
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('/me', [AuthController::class, 'me']);
+        Route::put('/profile', [AuthController::class, 'updateProfile']);
+        Route::put('/password', [AuthController::class, 'updatePassword']);
         Route::post('/logout', [AuthController::class, 'logout']);
     });
 });
@@ -60,6 +62,8 @@ Route::prefix('admin')
 
             Route::apiResource('quizzes', QuizController::class);
             Route::post('quizzes/{quiz}/notify', [QuizController::class, 'notify']);
+            Route::post('quizzes/{quiz}/archive', [QuizController::class, 'archive']);
+            Route::post('quizzes/{quiz}/unarchive', [QuizController::class, 'unarchive']);
             Route::post('quizzes/import', [QuizImportController::class, 'store']);
             Route::post('quizzes/convert', [QuizConverterController::class, 'convert']);
 

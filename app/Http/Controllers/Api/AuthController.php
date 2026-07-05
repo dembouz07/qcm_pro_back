@@ -153,6 +153,49 @@ class AuthController extends Controller
         return response()->json($request->user()->load('schoolClass'));
     }
 
+    /**
+     * Met à jour le nom et l'email du compte connecté.
+     */
+    public function updateProfile(Request $request)
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:120'],
+            'email' => ['required', 'email', 'max:190', Rule::unique('users', 'email')->ignore($user->id)],
+        ]);
+
+        $user->update($data);
+
+        return response()->json([
+            'message' => 'Profil mis à jour.',
+            'user' => $user->fresh()->load('schoolClass'),
+        ]);
+    }
+
+    /**
+     * Change le mot de passe du compte connecté.
+     */
+    public function updatePassword(Request $request)
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'current_password' => ['required', 'string'],
+            'password' => ['required', 'confirmed', Password::min(8)],
+        ]);
+
+        if (!Hash::check($data['current_password'], $user->password)) {
+            throw ValidationException::withMessages([
+                'current_password' => 'Le mot de passe actuel est incorrect.',
+            ]);
+        }
+
+        $user->update(['password' => Hash::make($data['password'])]);
+
+        return response()->json(['message' => 'Mot de passe modifié avec succès.']);
+    }
+
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()?->delete();

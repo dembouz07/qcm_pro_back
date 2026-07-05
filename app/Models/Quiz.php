@@ -21,6 +21,7 @@ class Quiz extends Model
         'ends_at',
         'is_published',
         'show_corrections',
+        'archived_at',
         'access_token',
     ];
 
@@ -29,6 +30,7 @@ class Quiz extends Model
         return [
             'starts_at' => 'datetime',
             'ends_at' => 'datetime',
+            'archived_at' => 'datetime',
             'is_published' => 'boolean',
             'show_corrections' => 'boolean',
             'stage_threshold' => 'integer',

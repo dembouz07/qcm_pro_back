@@ -33,6 +33,7 @@ class StudentQuizController extends Controller
             ->withCount('questions')
             ->where('school_class_id', $user->school_class_id)
             ->where('is_published', true)
+            ->whereNull('archived_at')
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->get()
