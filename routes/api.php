@@ -59,6 +59,7 @@ Route::prefix('admin')
             ]);
 
             Route::apiResource('quizzes', QuizController::class);
+            Route::post('quizzes/{quiz}/notify', [QuizController::class, 'notify']);
             Route::post('quizzes/import', [QuizImportController::class, 'store']);
             Route::post('quizzes/convert', [QuizConverterController::class, 'convert']);
 
