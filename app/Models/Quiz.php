@@ -20,6 +20,7 @@ class Quiz extends Model
         'starts_at',
         'ends_at',
         'is_published',
+        'show_corrections',
         'access_token',
     ];
 
@@ -29,6 +30,7 @@ class Quiz extends Model
             'starts_at' => 'datetime',
             'ends_at' => 'datetime',
             'is_published' => 'boolean',
+            'show_corrections' => 'boolean',
             'stage_threshold' => 'integer',
         ];
     }

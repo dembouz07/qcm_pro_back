@@ -77,6 +77,7 @@ Route::prefix('student')
         Route::get('quizzes', [StudentQuizController::class, 'index']);
         Route::get('results', [StudentQuizController::class, 'results']);
         Route::get('quizzes/{quiz}', [StudentQuizController::class, 'show']);
+        Route::get('quizzes/{quiz}/correction', [StudentQuizController::class, 'correction']);
         Route::post('quizzes/{quiz}/submit', [StudentQuizController::class, 'submit']);
     });
 

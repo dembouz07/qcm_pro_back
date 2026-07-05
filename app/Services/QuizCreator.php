@@ -24,6 +24,7 @@ class QuizCreator
                 'starts_at' => $data['starts_at'],
                 'ends_at' => $data['ends_at'] ?? null,
                 'is_published' => $data['is_published'] ?? true,
+                'show_corrections' => $data['show_corrections'] ?? false,
                 'access_token' => Str::random(32),
             ]);
 
@@ -45,6 +46,7 @@ class QuizCreator
                 'starts_at' => $data['starts_at'],
                 'ends_at' => $data['ends_at'] ?? null,
                 'is_published' => $data['is_published'] ?? true,
+                'show_corrections' => $data['show_corrections'] ?? false,
             ]);
 
             $quiz->questions()->delete();
@@ -86,6 +88,7 @@ class QuizCreator
         foreach ($questions as $questionIndex => $questionData) {
             $question = $quiz->questions()->create([
                 'body' => $questionData['body'],
+                'explanation' => $questionData['explanation'] ?? null,
                 'points' => $questionData['points'] ?? 1,
                 'order_index' => $questionIndex + 1,
             ]);

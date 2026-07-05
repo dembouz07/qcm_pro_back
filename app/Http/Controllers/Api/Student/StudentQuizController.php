@@ -83,6 +83,8 @@ class StudentQuizController extends Controller
                 'note_sur_20' => $s->note_sur_20,
                 'stade_atteint' => $s->stade_atteint,
                 'submitted_at' => $s->submitted_at,
+                'quiz_id' => $s->quiz_id,
+                'show_corrections' => (bool) ($s->quiz?->show_corrections),
             ]);
 
         return response()->json(['data' => $submissions]);
@@ -236,7 +238,69 @@ class StudentQuizController extends Controller
                 ? 'Temps terminé : réponses envoyées automatiquement.'
                 : 'Réponses envoyées avec succès.',
             'submission' => $submission,
+            'show_corrections' => (bool) $quiz->show_corrections,
+            'correction' => $quiz->show_corrections ? $this->buildCorrection($quiz, $submission) : null,
         ], 201);
+    }
+
+    /**
+     * Correction du QCM pour l'élève (si le formateur l'a activée et que l'élève a soumis).
+     */
+    public function correction(Request $request, Quiz $quiz)
+    {
+        $this->ensureStudentCanAccessQuiz($request, $quiz);
+
+        $submission = Submission::where('user_id', $request->user()->id)
+            ->where('quiz_id', $quiz->id)
+            ->latest('submitted_at')
+            ->first();
+
+        if (!$submission) {
+            return response()->json(['message' => "Vous n'avez pas encore passé ce QCM."], 404);
+        }
+
+        if (!$quiz->show_corrections) {
+            return response()->json(['message' => "La correction n'est pas disponible pour ce QCM."], 403);
+        }
+
+        return response()->json($this->buildCorrection($quiz, $submission));
+    }
+
+    /**
+     * Construit le détail de correction : chaque question avec le bon choix,
+     * le choix de l'élève, et l'explication du formateur.
+     */
+    private function buildCorrection(Quiz $quiz, Submission $submission): array
+    {
+        $quiz->load('questions.choices');
+        $answers = $submission->answers()->get()->keyBy('question_id');
+
+        return [
+            'quiz_title' => $quiz->title,
+            'score' => $submission->score,
+            'total_points' => $submission->total_points,
+            'note_sur_20' => $submission->note_sur_20,
+            'percentage' => $submission->percentage,
+            'questions' => $quiz->questions->map(function ($question) use ($answers) {
+                $answer = $answers->get($question->id);
+                $chosenId = $answer?->choice_id;
+
+                return [
+                    'id' => $question->id,
+                    'body' => $question->body,
+                    'explanation' => $question->explanation,
+                    'points' => $question->points,
+                    'is_correct' => $answer ? (bool) $answer->is_correct : false,
+                    'chosen_choice_id' => $chosenId,
+                    'choices' => $question->choices->map(fn ($choice) => [
+                        'id' => $choice->id,
+                        'body' => $choice->body,
+                        'is_correct' => (bool) $choice->is_correct,
+                        'chosen' => $chosenId === $choice->id,
+                    ])->values(),
+                ];
+            })->values(),
+        ];
     }
 
     private function ensureStudentCanAccessQuiz(Request $request, Quiz $quiz): void
