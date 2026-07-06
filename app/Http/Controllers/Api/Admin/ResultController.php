@@ -39,11 +39,53 @@ class ResultController extends Controller
             abort(response()->json(['message' => 'Accès refusé.'], 403));
         }
 
-        return $submission->load([
+        $submission->load([
             'user.schoolClass',
             'quiz.schoolClass',
-            'answers.question',
-            'answers.choice',
+            'quiz.questions.choices',
+            'answers',
+        ]);
+
+        $quiz = $submission->quiz;
+        $answers = $submission->answers->keyBy('question_id');
+
+        $correction = [
+            'quiz_title' => $quiz?->title,
+            'score' => $submission->score,
+            'total_points' => $submission->total_points,
+            'note_sur_20' => $submission->note_sur_20,
+            'percentage' => $submission->percentage,
+            'questions' => ($quiz?->questions ?? collect())->map(function ($question) use ($answers) {
+                $answer = $answers->get($question->id);
+                $chosenId = $answer?->choice_id;
+
+                return [
+                    'id' => $question->id,
+                    'body' => $question->body,
+                    'explanation' => $question->explanation,
+                    'points' => $question->points,
+                    'is_correct' => $answer ? (bool) $answer->is_correct : false,
+                    'chosen_choice_id' => $chosenId,
+                    'choices' => $question->choices->map(fn ($choice) => [
+                        'id' => $choice->id,
+                        'body' => $choice->body,
+                        'is_correct' => (bool) $choice->is_correct,
+                        'chosen' => $chosenId === $choice->id,
+                    ])->values(),
+                ];
+            })->values(),
+        ];
+
+        return response()->json([
+            'submission' => $submission,
+            'student' => [
+                'name' => $submission->user?->name
+                    ?? trim(($submission->participant_prenom ?? '') . ' ' . ($submission->participant_nom ?? ''))
+                    ?: 'Anonyme',
+                'email' => $submission->user?->email,
+                'class' => $submission->user?->schoolClass?->name ?? $quiz?->schoolClass?->name,
+            ],
+            'correction' => $correction,
         ]);
     }
 }
