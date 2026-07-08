@@ -122,11 +122,11 @@ class StudentQuizController extends Controller
             'description' => $quiz->description,
             'starts_at' => $quiz->starts_at,
             'ends_at' => $quiz->ends_at,
-            'questions' => $quiz->questions->map(fn ($question) => [
+            'questions' => $quiz->questions->shuffle()->map(fn ($question) => [
                 'id' => $question->id,
                 'body' => $question->body,
                 'points' => $question->points,
-                'choices' => $question->choices->map(fn ($choice) => [
+                'choices' => $question->choices->shuffle()->map(fn ($choice) => [
                     'id' => $choice->id,
                     'body' => $choice->body,
                 ])->values(),
