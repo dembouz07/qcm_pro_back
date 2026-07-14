@@ -2,9 +2,11 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\PublicQuizController;
+use App\Http\Controllers\Api\PublicSurveyController;
 use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\Admin\SchoolClassController;
 use App\Http\Controllers\Api\Admin\QuizController;
+use App\Http\Controllers\Api\Admin\SurveyController;
 use App\Http\Controllers\Api\Admin\QuizImportController;
 use App\Http\Controllers\Api\Admin\QuizConverterController;
 use App\Http\Controllers\Api\Admin\ProgressiveQuizController;
@@ -27,6 +29,12 @@ Route::prefix('public/quiz')->group(function () {
 
 // Permet à un participant de retrouver ses notes via son identité
 Route::post('public/my-results', [PublicQuizController::class, 'myResults']);
+
+// Sondages / questionnaires publics anonymes (sans authentification)
+Route::prefix('public/surveys')->group(function () {
+    Route::get('/{token}', [PublicSurveyController::class, 'show']);
+    Route::post('/{token}/respond', [PublicSurveyController::class, 'respond']);
+});
 
 // Notification IPN PayTech (public)
 Route::post('payments/paytech/ipn', [SubscriptionController::class, 'ipn']);
@@ -73,6 +81,13 @@ Route::prefix('admin')
 
             Route::get('results', [ResultController::class, 'index']);
             Route::get('results/{submission}', [ResultController::class, 'show']);
+
+            // Sondages / questionnaires anonymes
+            Route::get('surveys', [SurveyController::class, 'index']);
+            Route::post('surveys', [SurveyController::class, 'store']);
+            Route::get('surveys/{survey}', [SurveyController::class, 'show']);
+            Route::post('surveys/{survey}/toggle', [SurveyController::class, 'toggle']);
+            Route::delete('surveys/{survey}', [SurveyController::class, 'destroy']);
         });
     });
 
