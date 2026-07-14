@@ -86,6 +86,7 @@ Route::prefix('admin')
             Route::get('surveys', [SurveyController::class, 'index']);
             Route::post('surveys', [SurveyController::class, 'store']);
             Route::get('surveys/{survey}', [SurveyController::class, 'show']);
+            Route::put('surveys/{survey}', [SurveyController::class, 'update']);
             Route::post('surveys/{survey}/toggle', [SurveyController::class, 'toggle']);
             Route::delete('surveys/{survey}', [SurveyController::class, 'destroy']);
         });

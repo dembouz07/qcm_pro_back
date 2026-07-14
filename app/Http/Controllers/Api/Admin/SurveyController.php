@@ -23,7 +23,35 @@ class SurveyController extends Controller
     {
         $data = $this->validated($request);
 
-        $questions = collect($data['questions'])->values()->map(function ($q, $i) {
+        $survey = Survey::create([
+            'user_id' => $request->user()->id,
+            'title' => $data['title'],
+            'description' => $data['description'] ?? null,
+            'questions' => $this->normalizeQuestions($data['questions']),
+            'access_token' => Str::random(40),
+            'is_open' => true,
+        ]);
+
+        return response()->json($survey, 201);
+    }
+
+    public function update(Request $request, Survey $survey)
+    {
+        $this->authorizeOwner($request, $survey);
+        $data = $this->validated($request);
+
+        $survey->update([
+            'title' => $data['title'],
+            'description' => $data['description'] ?? null,
+            'questions' => $this->normalizeQuestions($data['questions']),
+        ]);
+
+        return response()->json($survey->fresh());
+    }
+
+    private function normalizeQuestions(array $questions): array
+    {
+        return collect($questions)->values()->map(function ($q, $i) {
             $type = $q['type'] ?? 'text';
             return [
                 'id' => $i + 1,
@@ -32,17 +60,6 @@ class SurveyController extends Controller
                 'options' => in_array($type, ['single', 'multiple'], true) ? array_values($q['options'] ?? []) : [],
             ];
         })->all();
-
-        $survey = Survey::create([
-            'user_id' => $request->user()->id,
-            'title' => $data['title'],
-            'description' => $data['description'] ?? null,
-            'questions' => $questions,
-            'access_token' => Str::random(40),
-            'is_open' => true,
-        ]);
-
-        return response()->json($survey, 201);
     }
 
     public function show(Request $request, Survey $survey)
