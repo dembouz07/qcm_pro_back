@@ -75,9 +75,9 @@ class QuizCreator
 
             $correctCount = collect($choices)->filter(fn ($choice) => (bool) Arr::get($choice, 'is_correct'))->count();
 
-            if ($correctCount !== 1) {
+            if ($correctCount < 1) {
                 throw ValidationException::withMessages([
-                    "questions.$questionIndex.choices" => 'Chaque question doit avoir exactement une bonne réponse.',
+                    "questions.$questionIndex.choices" => 'Chaque question doit avoir au moins une bonne réponse.',
                 ]);
             }
         }

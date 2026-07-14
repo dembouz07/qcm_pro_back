@@ -57,20 +57,22 @@ class ResultController extends Controller
             'percentage' => $submission->percentage,
             'questions' => ($quiz?->questions ?? collect())->map(function ($question) use ($answers) {
                 $answer = $answers->get($question->id);
-                $chosenId = $answer?->choice_id;
+                $chosen = $answer?->selected_choice_ids ?? ($answer?->choice_id ? [$answer->choice_id] : []);
+                $chosen = array_map('intval', $chosen);
 
                 return [
                     'id' => $question->id,
                     'body' => $question->body,
                     'explanation' => $question->explanation,
                     'points' => $question->points,
+                    'multiple' => $question->choices->where('is_correct', true)->count() > 1,
                     'is_correct' => $answer ? (bool) $answer->is_correct : false,
-                    'chosen_choice_id' => $chosenId,
+                    'chosen_choice_ids' => $chosen,
                     'choices' => $question->choices->map(fn ($choice) => [
                         'id' => $choice->id,
                         'body' => $choice->body,
                         'is_correct' => (bool) $choice->is_correct,
-                        'chosen' => $chosenId === $choice->id,
+                        'chosen' => in_array((int) $choice->id, $chosen, true),
                     ])->values(),
                 ];
             })->values(),

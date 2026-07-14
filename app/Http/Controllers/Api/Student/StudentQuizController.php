@@ -126,6 +126,7 @@ class StudentQuizController extends Controller
                 'id' => $question->id,
                 'body' => $question->body,
                 'points' => $question->points,
+                'multiple' => $question->choices->where('is_correct', true)->count() > 1,
                 'choices' => $question->choices->shuffle()->map(fn ($choice) => [
                     'id' => $choice->id,
                     'body' => $choice->body,
@@ -166,6 +167,8 @@ class StudentQuizController extends Controller
             'answers' => ['nullable', 'array'],
             'answers.*.question_id' => ['required', 'integer'],
             'answers.*.choice_id' => ['nullable', 'integer'],
+            'answers.*.choice_ids' => ['nullable', 'array'],
+            'answers.*.choice_ids.*' => ['integer'],
         ]);
 
         $quiz->load('questions.choices');
@@ -174,16 +177,33 @@ class StudentQuizController extends Controller
             ->filter(fn ($answer) => isset($answer['question_id']))
             ->keyBy('question_id');
 
-        if (!$isAutoSubmit && $submittedAnswers->count() !== $questions->count()) {
-            throw ValidationException::withMessages([
-                'answers' => 'Vous devez répondre à toutes les questions.',
-            ]);
+        // Récupère l'ensemble des choix sélectionnés pour une réponse (multi ou simple).
+        $selectedFor = function ($answer) {
+            if (!$answer) {
+                return [];
+            }
+            if (!empty($answer['choice_ids']) && is_array($answer['choice_ids'])) {
+                return array_values(array_unique(array_map('intval', $answer['choice_ids'])));
+            }
+            if (!empty($answer['choice_id'])) {
+                return [(int) $answer['choice_id']];
+            }
+            return [];
+        };
+
+        if (!$isAutoSubmit) {
+            $answeredCount = $submittedAnswers->filter(fn ($a) => count($selectedFor($a)) > 0)->count();
+            if ($answeredCount !== $questions->count()) {
+                throw ValidationException::withMessages([
+                    'answers' => 'Vous devez répondre à toutes les questions.',
+                ]);
+            }
         }
 
         $totalPoints = (float) $quiz->questions->sum('points');
         $score = 0.0;
 
-        $submission = DB::transaction(function () use ($request, $quiz, $questions, $submittedAnswers, $totalPoints, &$score) {
+        $submission = DB::transaction(function () use ($request, $quiz, $questions, $submittedAnswers, $selectedFor, $totalPoints, &$score) {
             $submission = Submission::create([
                 'user_id' => $request->user()->id,
                 'quiz_id' => $quiz->id,
@@ -196,27 +216,25 @@ class StudentQuizController extends Controller
 
             foreach ($questions as $question) {
                 $answer = $submittedAnswers->get($question->id);
-                $choice = null;
+                $validIds = $question->choices->pluck('id')->map(fn ($i) => (int) $i);
 
-                if ($answer && !empty($answer['choice_id'])) {
-                    $choice = Choice::where('id', $answer['choice_id'])
-                        ->where('question_id', $question->id)
-                        ->first();
+                // Choix sélectionnés qui appartiennent réellement à la question
+                $selected = collect($selectedFor($answer))
+                    ->filter(fn ($id) => $validIds->contains($id))
+                    ->unique()->sort()->values();
 
-                    if (!$choice) {
-                        throw ValidationException::withMessages([
-                            'answers' => 'Un choix envoyé ne correspond pas à sa question.',
-                        ]);
-                    }
-                }
+                $correctIds = $question->choices->where('is_correct', true)
+                    ->pluck('id')->map(fn ($i) => (int) $i)->sort()->values();
 
-                $isCorrect = $choice ? (bool) $choice->is_correct : false;
+                // Correct uniquement si l'ensemble sélectionné == ensemble des bonnes réponses
+                $isCorrect = $selected->isNotEmpty() && $selected->all() === $correctIds->all();
                 $pointsAwarded = $isCorrect ? (float) $question->points : 0.0;
                 $score += $pointsAwarded;
 
                 $submission->answers()->create([
                     'question_id' => $question->id,
-                    'choice_id' => $choice?->id,
+                    'choice_id' => $selected->count() === 1 ? $selected->first() : null,
+                    'selected_choice_ids' => $selected->all(),
                     'is_correct' => $isCorrect,
                     'points_awarded' => $pointsAwarded,
                 ]);
@@ -284,20 +302,22 @@ class StudentQuizController extends Controller
             'percentage' => $submission->percentage,
             'questions' => $quiz->questions->map(function ($question) use ($answers) {
                 $answer = $answers->get($question->id);
-                $chosenId = $answer?->choice_id;
+                $chosen = $answer?->selected_choice_ids ?? ($answer?->choice_id ? [$answer->choice_id] : []);
+                $chosen = array_map('intval', $chosen);
 
                 return [
                     'id' => $question->id,
                     'body' => $question->body,
                     'explanation' => $question->explanation,
                     'points' => $question->points,
+                    'multiple' => $question->choices->where('is_correct', true)->count() > 1,
                     'is_correct' => $answer ? (bool) $answer->is_correct : false,
-                    'chosen_choice_id' => $chosenId,
+                    'chosen_choice_ids' => $chosen,
                     'choices' => $question->choices->map(fn ($choice) => [
                         'id' => $choice->id,
                         'body' => $choice->body,
                         'is_correct' => (bool) $choice->is_correct,
-                        'chosen' => $chosenId === $choice->id,
+                        'chosen' => in_array((int) $choice->id, $chosen, true),
                     ])->values(),
                 ];
             })->values(),

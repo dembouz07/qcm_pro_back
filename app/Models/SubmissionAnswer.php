@@ -13,6 +13,7 @@ class SubmissionAnswer extends Model
         'submission_id',
         'question_id',
         'choice_id',
+        'selected_choice_ids',
         'is_correct',
         'points_awarded',
     ];
@@ -22,6 +23,7 @@ class SubmissionAnswer extends Model
         return [
             'is_correct' => 'boolean',
             'points_awarded' => 'float',
+            'selected_choice_ids' => 'array',
         ];
     }
 
