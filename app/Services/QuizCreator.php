@@ -80,6 +80,14 @@ class QuizCreator
                     "questions.$questionIndex.choices" => 'Chaque question doit avoir au moins une bonne réponse.',
                 ]);
             }
+
+            $normalizedChoices = collect($choices)
+                ->map(fn ($choice) => mb_strtolower(trim((string) Arr::get($choice, 'body')), 'UTF-8'));
+            if ($normalizedChoices->unique()->count() !== $normalizedChoices->count()) {
+                throw ValidationException::withMessages([
+                    "questions.$questionIndex.choices" => 'Les choix d’une question doivent être différents.',
+                ]);
+            }
         }
     }
 

@@ -21,7 +21,7 @@ class ProgressiveQuizCreator
      */
     public function create(array $data, ?User $admin = null): Quiz
     {
-        $this->assertValidStages($data['stages'] ?? []);
+        $this->assertValidStages($data['stages'] ?? [], (int) ($data['stage_threshold'] ?? 0));
 
         return DB::transaction(function () use ($data, $admin) {
             $quiz = Quiz::create([
@@ -41,6 +41,7 @@ class ProgressiveQuizCreator
 
             foreach ($data['stages'] as $stageIndex => $stage) {
                 $stageNumber = $stageIndex + 1;
+                $stageName = trim((string) ($stage['name'] ?? '')) ?: "Stade {$stageNumber}";
 
                 foreach ($stage['questions'] as $questionText) {
                     if (trim((string) $questionText) === '') {
@@ -52,6 +53,7 @@ class ProgressiveQuizCreator
                         'points' => 1,
                         'order_index' => $orderIndex++,
                         'stage' => $stageNumber,
+                        'stage_name' => $stageName,
                     ]);
 
                     // Oui = bonne réponse (1 point), Non = 0 point
@@ -74,7 +76,7 @@ class ProgressiveQuizCreator
 
     public function update(Quiz $quiz, array $data): Quiz
     {
-        $this->assertValidStages($data['stages'] ?? []);
+        $this->assertValidStages($data['stages'] ?? [], (int) ($data['stage_threshold'] ?? 0));
 
         return DB::transaction(function () use ($quiz, $data) {
             $quiz->update([
@@ -94,6 +96,7 @@ class ProgressiveQuizCreator
 
             foreach ($data['stages'] as $stageIndex => $stage) {
                 $stageNumber = $stageIndex + 1;
+                $stageName = trim((string) ($stage['name'] ?? '')) ?: "Stade {$stageNumber}";
 
                 foreach ($stage['questions'] as $questionText) {
                     if (trim((string) $questionText) === '') {
@@ -105,6 +108,7 @@ class ProgressiveQuizCreator
                         'points' => 1,
                         'order_index' => $orderIndex++,
                         'stage' => $stageNumber,
+                        'stage_name' => $stageName,
                     ]);
 
                     $question->choices()->create([
@@ -124,7 +128,7 @@ class ProgressiveQuizCreator
         });
     }
 
-    private function assertValidStages(array $stages): void
+    private function assertValidStages(array $stages, int $threshold): void
     {
         if (count($stages) < 1) {
             throw ValidationException::withMessages([
@@ -141,6 +145,24 @@ class ProgressiveQuizCreator
             if (count($questions) < 1) {
                 throw ValidationException::withMessages([
                     "stages.$index.questions" => 'Chaque stade doit contenir au moins une question.',
+                ]);
+            }
+
+            if ($threshold > count($questions)) {
+                throw ValidationException::withMessages([
+                    "stages.$index.questions" => sprintf(
+                        'Le seuil de %d « Oui » dépasse les %d question(s) de ce stade.',
+                        $threshold,
+                        count($questions)
+                    ),
+                ]);
+            }
+
+            $normalizedQuestions = collect($questions)
+                ->map(fn ($question) => mb_strtolower(trim((string) $question), 'UTF-8'));
+            if ($normalizedQuestions->unique()->count() !== $normalizedQuestions->count()) {
+                throw ValidationException::withMessages([
+                    "stages.$index.questions" => 'Les questions d’un même stade doivent être différentes.',
                 ]);
             }
         }

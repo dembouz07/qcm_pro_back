@@ -20,9 +20,10 @@ class QuizImportController extends Controller
             'file' => ['required', 'file', 'max:10240'],
             'title' => ['nullable', 'string', 'max:190'],
             'description' => ['nullable', 'string'],
-            'school_class_id' => ['nullable', Rule::exists('school_classes', 'id')],
+            'school_class_id' => ['nullable', 'integer'],
             'starts_at' => ['nullable', 'date'],
             'ends_at' => ['nullable', 'date', 'after:starts_at'],
+            'show_corrections' => ['sometimes', 'boolean'],
         ]);
 
         $extension = strtolower($request->file('file')->getClientOriginalExtension());
@@ -40,6 +41,12 @@ class QuizImportController extends Controller
             };
         }
 
+        if (!in_array($extension, ['csv', 'json', 'doc', 'docx', 'pdf'], true)) {
+            throw ValidationException::withMessages([
+                'file' => 'Format non pris en charge. Utilisez CSV, JSON, DOC, DOCX ou PDF.',
+            ]);
+        }
+
         $data = match ($extension) {
             'json' => $this->parseJson($request),
             'pdf' => $this->parsePdf($request),
@@ -53,6 +60,7 @@ class QuizImportController extends Controller
             'school_class_id' => $request->input('school_class_id'),
             'starts_at' => $request->input('starts_at'),
             'ends_at' => $request->input('ends_at'),
+            'show_corrections' => $request->input('show_corrections'),
         ], fn ($value) => $value !== null && $value !== ''));
 
         $data = Validator::make($data, [
@@ -61,6 +69,7 @@ class QuizImportController extends Controller
             'school_class_id' => ['required', Rule::exists('school_classes', 'id')->where('owner_id', $request->user()->id)],
             'starts_at' => ['required', 'date'],
             'ends_at' => ['nullable', 'date', 'after:starts_at'],
+            'show_corrections' => ['sometimes', 'boolean'],
             'questions' => ['required', 'array', 'min:1'],
             'questions.*.body' => ['required', 'string'],
             'questions.*.points' => ['nullable', 'integer', 'min:1', 'max:100'],
@@ -172,7 +181,12 @@ class QuizImportController extends Controller
 
     private function detectDelimiter(string $path): string
     {
-        $firstLine = (string) fgets(fopen($path, 'r'));
+        $handle = fopen($path, 'r');
+        if (!$handle) {
+            return ',';
+        }
+        $firstLine = (string) fgets($handle);
+        fclose($handle);
         $candidates = [',', ';', "\t"];
         $counts = array_map(fn ($delimiter) => substr_count($firstLine, $delimiter), $candidates);
         $maxIndex = array_keys($counts, max($counts))[0];
@@ -182,7 +196,8 @@ class QuizImportController extends Controller
 
     private function normalizeHeader(?string $header): string
     {
-        $header = strtolower(trim((string) $header));
+        $header = ltrim((string) $header, "\xEF\xBB\xBF");
+        $header = strtolower(trim($header));
         $header = str_replace([' ', '-'], '_', $header);
 
         return match ($header) {
@@ -312,6 +327,16 @@ class QuizImportController extends Controller
             $line = trim($rawLine);
             if ($line === '') continue;
 
+            if ($currentQuestion !== null && !empty($currentChoices)
+                && preg_match('/^(?:bonnes?\s*r[ée]ponses?|r[ée]ponses?(?:\s*correctes?)?|solutions?)\s*[:=\-–]\s*(.+)$/iu', $line, $answerMatch)) {
+                foreach ($this->answerIndexes($answerMatch[1]) as $choiceIndex) {
+                    if (isset($currentChoices[$choiceIndex])) {
+                        $currentChoices[$choiceIndex]['is_correct'] = true;
+                    }
+                }
+                continue;
+            }
+
             $choice = $this->parseChoice($line);
             $isNumberedQuestion = (bool) preg_match('/^\d+\s*[\.\)\-:]\s+/u', $line);
 
@@ -368,6 +393,11 @@ class QuizImportController extends Controller
                     'file' => 'Question ' . ($index + 1) . ' : au moins 2 choix requis (trouvé : ' . count($question['choices']) . ').'
                 ]);
             }
+            if (!collect($question['choices'])->contains(fn ($choice) => $choice['is_correct'])) {
+                throw ValidationException::withMessages([
+                    'file' => 'Question ' . ($index + 1) . ' : aucune bonne réponse détectée. Utilisez [x], « (bonne réponse) » ou « Réponse : B ».',
+                ]);
+            }
         }
 
         return ['questions' => $questions];
@@ -407,6 +437,11 @@ class QuizImportController extends Controller
 
         // Retirer un éventuel libellé de type "A)" / "B." en tête du texte.
         $body = preg_replace('/^[A-Za-z][\.\)]\s*/u', '', trim((string) $body));
+        $correctMarker = '/\s*(?:\(\s*(?:bonne(?:\s+r[ée]ponse)?|correcte?|correct|vrai|true|juste)\s*\)|\[\s*(?:bonne(?:\s+r[ée]ponse)?|correcte?|correct|vrai|true|juste)\s*\]|[✓✔☑✅]|\*)\s*$/iu';
+        if (preg_match($correctMarker, $body)) {
+            $isCorrect = true;
+            $body = preg_replace($correctMarker, '', $body);
+        }
         $body = trim($body);
 
         if ($body === '') {
@@ -421,31 +456,22 @@ class QuizImportController extends Controller
 
     private function finalizeQuestion(string $questionText, array $choices): array
     {
-        // Index des choix marqués comme corrects.
-        $correctIndexes = [];
-        foreach ($choices as $i => $choice) {
-            if (!empty($choice['is_correct'])) {
-                $correctIndexes[] = $i;
-            }
-        }
-
-        if (count($correctIndexes) === 0 && !empty($choices)) {
-            // Aucune bonne réponse détectée : on marque la première par défaut.
-            $choices[0]['is_correct'] = true;
-        } elseif (count($correctIndexes) > 1) {
-            // Plusieurs bonnes réponses : on ne garde que la première pour respecter
-            // la règle "exactement une bonne réponse".
-            foreach ($correctIndexes as $rank => $idx) {
-                if ($rank > 0) {
-                    $choices[$idx]['is_correct'] = false;
-                }
-            }
-        }
-
         return [
             'body' => $questionText,
             'points' => 1,
             'choices' => $choices,
         ];
+    }
+
+    private function answerIndexes(string $answer): array
+    {
+        preg_match_all('/(?<![A-Za-zÀ-ÿ])([A-Z])(?=$|[^A-Za-zÀ-ÿ])/iu', $answer, $matches);
+
+        return collect($matches[1] ?? [])
+            ->map(fn ($letter) => ord(strtoupper($letter)) - ord('A'))
+            ->filter(fn ($index) => $index >= 0 && $index < 26)
+            ->unique()
+            ->values()
+            ->all();
     }
 }

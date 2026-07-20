@@ -16,6 +16,7 @@ class Question extends Model
         'points',
         'order_index',
         'stage',
+        'stage_name',
     ];
 
     protected function casts(): array

@@ -127,6 +127,7 @@ class PublicQuizController extends Controller
             ->sortKeys()
             ->map(fn ($questions, $stage) => [
                 'stage' => (int) $stage,
+                'name' => $questions->first()?->stage_name ?: "Stade {$stage}",
                 'questions' => $questions->map(fn ($question) => [
                     'id' => $question->id,
                     'body' => $question->body,
