@@ -138,6 +138,42 @@ class QuizController extends Controller
         ]);
     }
 
+    /**
+     * Statistiques par question : combien de fois chaque question a été ratée
+     * (pour améliorer les questions les plus difficiles).
+     */
+    public function stats(Request $request, Quiz $quiz)
+    {
+        $this->authorizeOwner($request, $quiz);
+        $quiz->load('questions');
+
+        $submissionIds = $quiz->submissions()->pluck('id');
+
+        $answers = \App\Models\SubmissionAnswer::whereIn('submission_id', $submissionIds)
+            ->get(['question_id', 'is_correct']);
+        $byQuestion = $answers->groupBy('question_id');
+
+        $questions = $quiz->questions->map(function ($q) use ($byQuestion) {
+            $group = $byQuestion->get($q->id, collect());
+            $total = $group->count();
+            $wrong = $group->filter(fn ($a) => !$a->is_correct)->count();
+
+            return [
+                'id' => $q->id,
+                'body' => $q->body,
+                'total' => $total,
+                'wrong' => $wrong,
+                'correct' => $total - $wrong,
+                'wrong_rate' => $total > 0 ? (int) round($wrong / $total * 100) : 0,
+            ];
+        })->sortByDesc('wrong')->values();
+
+        return response()->json([
+            'submissions' => $submissionIds->count(),
+            'questions' => $questions,
+        ]);
+    }
+
     private function authorizeOwner(Request $request, Quiz $quiz): void
     {
         if ((int) $quiz->created_by !== (int) $request->user()->id) {

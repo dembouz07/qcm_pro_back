@@ -69,6 +69,7 @@ Route::prefix('admin')
             ]);
 
             Route::apiResource('quizzes', QuizController::class);
+            Route::get('quizzes/{quiz}/stats', [QuizController::class, 'stats']);
             Route::post('quizzes/{quiz}/notify', [QuizController::class, 'notify']);
             Route::post('quizzes/{quiz}/archive', [QuizController::class, 'archive']);
             Route::post('quizzes/{quiz}/unarchive', [QuizController::class, 'unarchive']);
