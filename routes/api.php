@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\SuperAdmin\StatsController;
 use App\Http\Controllers\Api\SuperAdmin\RevenueController;
 use App\Http\Controllers\Api\SuperAdmin\UserController as SuperAdminUserController;
 use App\Http\Middleware\EnsureNotBlocked;
+use App\Http\Middleware\EnsurePlanFeature;
 use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\EnsureSubscribed;
 use Illuminate\Support\Facades\Route;
@@ -68,8 +69,11 @@ Route::prefix('admin')
                 'classes' => 'class',
             ]);
 
+            Route::post('quizzes/smart', [QuizController::class, 'store'])
+                ->middleware(EnsurePlanFeature::class . ':quiz_smart');
             Route::apiResource('quizzes', QuizController::class);
-            Route::get('quizzes/{quiz}/stats', [QuizController::class, 'stats']);
+            Route::get('quizzes/{quiz}/stats', [QuizController::class, 'stats'])
+                ->middleware(EnsurePlanFeature::class . ':wrong_question_stats');
             Route::post('quizzes/{quiz}/notify', [QuizController::class, 'notify']);
             Route::post('quizzes/{quiz}/archive', [QuizController::class, 'archive']);
             Route::post('quizzes/{quiz}/unarchive', [QuizController::class, 'unarchive']);
@@ -84,12 +88,14 @@ Route::prefix('admin')
             Route::get('results/{submission}', [ResultController::class, 'show']);
 
             // Sondages / questionnaires anonymes
-            Route::get('surveys', [SurveyController::class, 'index']);
-            Route::post('surveys', [SurveyController::class, 'store']);
-            Route::get('surveys/{survey}', [SurveyController::class, 'show']);
-            Route::put('surveys/{survey}', [SurveyController::class, 'update']);
-            Route::post('surveys/{survey}/toggle', [SurveyController::class, 'toggle']);
-            Route::delete('surveys/{survey}', [SurveyController::class, 'destroy']);
+            Route::middleware(EnsurePlanFeature::class . ':surveys')->group(function () {
+                Route::get('surveys', [SurveyController::class, 'index']);
+                Route::post('surveys', [SurveyController::class, 'store']);
+                Route::get('surveys/{survey}', [SurveyController::class, 'show']);
+                Route::put('surveys/{survey}', [SurveyController::class, 'update']);
+                Route::post('surveys/{survey}/toggle', [SurveyController::class, 'toggle']);
+                Route::delete('surveys/{survey}', [SurveyController::class, 'destroy']);
+            });
         });
     });
 

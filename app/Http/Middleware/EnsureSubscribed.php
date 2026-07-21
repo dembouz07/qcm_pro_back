@@ -14,7 +14,7 @@ class EnsureSubscribed
 
         if (!$user || !$user->hasActiveSubscription()) {
             return response()->json([
-                'message' => "Abonnement requis pour accéder à cette fonctionnalité.",
+                'message' => "Une formule active est requise pour accéder à cette fonctionnalité.",
                 'subscription_required' => true,
             ], 402); // 402 Payment Required
         }

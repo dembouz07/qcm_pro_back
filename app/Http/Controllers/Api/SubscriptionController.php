@@ -14,15 +14,7 @@ class SubscriptionController extends Controller
 {
     public function status(Request $request)
     {
-        $user = $request->user();
-
-        return response()->json([
-            'subscription_status' => $user->subscription_status,
-            'subscribed_until' => $user->subscribed_until,
-            'is_active' => $user->hasActiveSubscription(),
-            'amount' => (int) config('services.paytech.amount'),
-            'currency' => 'XOF',
-        ]);
+        return response()->json($this->statusPayload($request->user()));
     }
 
     /**
@@ -30,6 +22,10 @@ class SubscriptionController extends Controller
      */
     public function checkout(Request $request, PayTechService $paytech)
     {
+        $data = $request->validate([
+            'plan' => ['required', 'string', 'in:' . User::PLAN_ESSENTIAL . ',' . User::PLAN_PREMIUM],
+        ]);
+
         try {
             if (!$paytech->isConfigured()) {
                 return response()->json([
@@ -38,19 +34,25 @@ class SubscriptionController extends Controller
             }
 
             $user = $request->user();
-            $amount = (int) config('services.paytech.amount');
+            $plan = $data['plan'];
+            $planDetails = User::subscriptionPlans()[$plan];
+            $amount = (int) $planDetails['price'];
             $frontend = rtrim((string) config('services.paytech.frontend_url'), '/');
-            $refCommand = 'QCMPRO_' . $user->id . '_' . time();
+            $refCommand = 'QCMPRO_' . strtoupper($plan) . '_' . $user->id . '_' . time();
 
             $payment = $paytech->requestPayment([
-                'item_name' => 'Abonnement QCM Pro',
-                'command_name' => "Abonnement mensuel QCM Pro - {$user->email}",
+                'item_name' => 'QCM Pro - Formule ' . $planDetails['name'],
+                'command_name' => "Formule {$planDetails['name']} (1 mois) - {$user->email}",
                 'amount' => $amount,
                 'ref_command' => $refCommand,
                 'success_url' => $frontend . '/admin/subscription?paid=1',
                 'cancel_url' => $frontend . '/admin/subscription?canceled=1',
                 'ipn_url' => url('/api/payments/paytech/ipn'),
-                'custom_field' => ['user_id' => $user->id, 'ref_command' => $refCommand],
+                'custom_field' => [
+                    'user_id' => $user->id,
+                    'ref_command' => $refCommand,
+                    'plan' => $plan,
+                ],
             ]);
 
             if (!$payment || empty($payment['token'])) {
@@ -66,7 +68,7 @@ class SubscriptionController extends Controller
                 'amount' => $amount,
                 'currency' => 'XOF',
                 'status' => 'pending',
-                'meta' => ['ref_command' => $refCommand],
+                'meta' => ['ref_command' => $refCommand, 'plan' => $plan],
             ]);
 
             return response()->json(['url' => $payment['url']]);
@@ -142,11 +144,7 @@ class SubscriptionController extends Controller
 
         $user->refresh();
 
-        return response()->json([
-            'subscription_status' => $user->subscription_status,
-            'subscribed_until' => $user->subscribed_until,
-            'is_active' => $user->hasActiveSubscription(),
-        ]);
+        return response()->json($this->statusPayload($user));
     }
 
     /**
@@ -158,6 +156,9 @@ class SubscriptionController extends Controller
             return;
         }
 
+        $paymentMeta = (array) $payment->meta;
+        $plan = (string) ($paymentMeta['plan'] ?? '');
+
         $payment->update([
             'status' => 'completed',
             'meta' => array_merge((array) $payment->meta, $meta),
@@ -165,15 +166,37 @@ class SubscriptionController extends Controller
 
         $user = User::find($payment->user_id);
         if ($user) {
+            if (!in_array($plan, [User::PLAN_ESSENTIAL, User::PLAN_PREMIUM], true)) {
+                // Les anciens paiements donnaient accès à toutes les fonctionnalités.
+                $plan = in_array($user->subscription_plan, [User::PLAN_ESSENTIAL, User::PLAN_PREMIUM], true)
+                    ? $user->subscription_plan
+                    : User::PLAN_PREMIUM;
+            }
+
             // Prolonge à partir de la date d'expiration si encore active, sinon à partir de maintenant.
             $base = $user->subscribed_until && $user->subscribed_until->isFuture()
                 ? $user->subscribed_until
                 : Carbon::now();
 
             $user->update([
+                'subscription_plan' => $plan,
                 'subscription_status' => 'active',
                 'subscribed_until' => $base->copy()->addMonth(),
             ]);
         }
+    }
+
+    private function statusPayload(User $user): array
+    {
+        return [
+            'subscription_status' => $user->subscription_status,
+            'subscription_plan' => $user->subscription_plan ?: User::PLAN_FREE,
+            'current_plan' => $user->effectiveSubscriptionPlan(),
+            'subscribed_until' => $user->subscribed_until,
+            'is_active' => $user->isPaidSubscriptionActive(),
+            'features' => $user->plan_features,
+            'plans' => array_values(User::subscriptionPlans()),
+            'currency' => 'XOF',
+        ];
     }
 }

@@ -44,10 +44,7 @@ class AuthController extends Controller
         ], 201);
     }
 
-    /**
-     * Inscription d'un administrateur (formateur).
-     * L'accès aux fonctionnalités est conditionné à un abonnement actif.
-     */
+    /** Inscription d'un formateur sur la formule gratuite. */
     public function registerAdmin(Request $request)
     {
         $data = $request->validate([
@@ -56,16 +53,15 @@ class AuthController extends Controller
             'password' => ['required', 'confirmed', Password::min(8)],
         ]);
 
-        // Essai gratuit à l'inscription (1er mois offert)
-        $trialDays = (int) config('services.paytech.trial_days', 30);
-
+        // Tout nouveau formateur commence avec la formule gratuite, sans expiration.
         $user = User::create([
             'name' => $data['name'],
             'email' => $data['email'],
             'password' => Hash::make($data['password']),
             'role' => 'admin',
-            'subscription_status' => $trialDays > 0 ? 'active' : 'inactive',
-            'subscribed_until' => $trialDays > 0 ? now()->addDays($trialDays) : null,
+            'subscription_plan' => User::PLAN_FREE,
+            'subscription_status' => 'active',
+            'subscribed_until' => null,
         ]);
 
         return response()->json([

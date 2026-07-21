@@ -42,8 +42,6 @@ return [
         'public_key' => env('PAYDUNYA_PUBLIC_KEY'),
         'token' => env('PAYDUNYA_TOKEN'),
         'store_name' => env('PAYDUNYA_STORE_NAME', 'QCM Pro'),
-        'amount' => (int) env('SUBSCRIPTION_AMOUNT', 1000),
-        'trial_days' => (int) env('SUBSCRIPTION_TRIAL_DAYS', 30),
         'frontend_url' => env('FRONTEND_URL', 'https://qcm-nine.vercel.app'),
     ],
 
@@ -51,8 +49,6 @@ return [
         'env' => env('PAYTECH_ENV', 'test'), // 'test' (sandbox) ou 'prod'
         'api_key' => env('PAYTECH_API_KEY'),
         'api_secret' => env('PAYTECH_API_SECRET'),
-        'amount' => (int) env('SUBSCRIPTION_AMOUNT', 1000),
-        'trial_days' => (int) env('SUBSCRIPTION_TRIAL_DAYS', 30),
         'frontend_url' => env('FRONTEND_URL', 'https://qcm-nine.vercel.app'),
     ],
 

@@ -22,10 +22,8 @@ class StatsController extends Controller
             ->pluck('total', 'role');
 
         $activeSubscriptions = User::where('subscription_status', 'active')
-            ->where(function ($q) use ($now) {
-                $q->whereNull('subscribed_until')
-                  ->orWhere('subscribed_until', '>', $now);
-            })
+            ->whereIn('subscription_plan', [User::PLAN_ESSENTIAL, User::PLAN_PREMIUM])
+            ->where('subscribed_until', '>', $now)
             ->where('role', 'admin')
             ->count();
 

@@ -11,10 +11,13 @@ class PublicSurveyController extends Controller
     // Récupère un sondage public (sans authentification).
     public function show(string $token)
     {
-        $survey = Survey::where('access_token', $token)->first();
+        $survey = Survey::with('owner')->where('access_token', $token)->first();
 
         if (!$survey) {
             return response()->json(['message' => 'Sondage introuvable.'], 404);
+        }
+        if (!$survey->owner?->hasFeature('surveys')) {
+            return response()->json(['message' => 'Ce sondage n’est pas disponible avec la formule actuelle du formateur.'], 403);
         }
         if (!$survey->is_open) {
             return response()->json(['message' => 'Ce sondage est fermé.'], 403);
@@ -30,10 +33,13 @@ class PublicSurveyController extends Controller
     // Enregistre une réponse anonyme.
     public function respond(Request $request, string $token)
     {
-        $survey = Survey::where('access_token', $token)->first();
+        $survey = Survey::with('owner')->where('access_token', $token)->first();
 
         if (!$survey) {
             return response()->json(['message' => 'Sondage introuvable.'], 404);
+        }
+        if (!$survey->owner?->hasFeature('surveys')) {
+            return response()->json(['message' => 'Ce sondage n’est pas disponible avec la formule actuelle du formateur.'], 403);
         }
         if (!$survey->is_open) {
             return response()->json(['message' => 'Ce sondage est fermé.'], 403);
