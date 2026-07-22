@@ -15,6 +15,7 @@ class Quiz extends Model
         'description',
         'type',
         'stage_threshold',
+        'require_stage_pass',
         'school_class_id',
         'created_by',
         'starts_at',
@@ -34,6 +35,7 @@ class Quiz extends Model
             'is_published' => 'boolean',
             'show_corrections' => 'boolean',
             'stage_threshold' => 'integer',
+            'require_stage_pass' => 'boolean',
         ];
     }
 
