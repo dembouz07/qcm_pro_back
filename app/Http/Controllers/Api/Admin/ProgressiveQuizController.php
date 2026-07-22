@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Quiz;
 use App\Services\ProgressiveQuizCreator;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 
 class ProgressiveQuizController extends Controller
 {
@@ -43,7 +42,7 @@ class ProgressiveQuizController extends Controller
             'title' => ['required', 'string', 'max:190'],
             'description' => ['nullable', 'string'],
             'stage_threshold' => ['required', 'integer', 'min:1', 'max:20'],
-            'school_class_id' => ['required', Rule::exists('school_classes', 'id')->where('owner_id', $request->user()->id)],
+            'require_stage_pass' => ['sometimes', 'boolean'],
             'starts_at' => ['required', 'date'],
             'ends_at' => ['nullable', 'date', 'after:starts_at'],
             'is_published' => ['sometimes', 'boolean'],

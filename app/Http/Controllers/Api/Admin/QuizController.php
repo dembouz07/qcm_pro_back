@@ -90,6 +90,15 @@ class QuizController extends Controller
         $this->authorizeOwner($request, $quiz);
         $quiz->load('schoolClass');
 
+        if ($quiz->school_class_id === null) {
+            return response()->json([
+                'message' => 'Ce QCM est public et n’est associé à aucune classe.',
+                'sent' => 0,
+                'failed' => 0,
+                'total' => 0,
+            ], 422);
+        }
+
         $students = User::where('role', 'student')
             ->where('school_class_id', $quiz->school_class_id)
             ->whereNotNull('email')
