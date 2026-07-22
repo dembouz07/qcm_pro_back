@@ -12,8 +12,11 @@ class Question extends Model
     protected $fillable = [
         'quiz_id',
         'body',
+        'explanation',
         'points',
         'order_index',
+        'stage',
+        'stage_name',
     ];
 
     protected function casts(): array
@@ -21,6 +24,7 @@ class Question extends Model
         return [
             'points' => 'integer',
             'order_index' => 'integer',
+            'stage' => 'integer',
         ];
     }
 

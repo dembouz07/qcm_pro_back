@@ -13,11 +13,15 @@ class Quiz extends Model
     protected $fillable = [
         'title',
         'description',
+        'type',
+        'stage_threshold',
         'school_class_id',
         'created_by',
         'starts_at',
         'ends_at',
         'is_published',
+        'show_corrections',
+        'archived_at',
         'access_token',
     ];
 
@@ -26,8 +30,16 @@ class Quiz extends Model
         return [
             'starts_at' => 'datetime',
             'ends_at' => 'datetime',
+            'archived_at' => 'datetime',
             'is_published' => 'boolean',
+            'show_corrections' => 'boolean',
+            'stage_threshold' => 'integer',
         ];
+    }
+
+    public function isProgressive(): bool
+    {
+        return $this->type === 'progressive';
     }
 
     public function schoolClass()

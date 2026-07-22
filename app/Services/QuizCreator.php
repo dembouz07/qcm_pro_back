@@ -24,6 +24,7 @@ class QuizCreator
                 'starts_at' => $data['starts_at'],
                 'ends_at' => $data['ends_at'] ?? null,
                 'is_published' => $data['is_published'] ?? true,
+                'show_corrections' => $data['show_corrections'] ?? false,
                 'access_token' => Str::random(32),
             ]);
 
@@ -45,6 +46,7 @@ class QuizCreator
                 'starts_at' => $data['starts_at'],
                 'ends_at' => $data['ends_at'] ?? null,
                 'is_published' => $data['is_published'] ?? true,
+                'show_corrections' => $data['show_corrections'] ?? false,
             ]);
 
             $quiz->questions()->delete();
@@ -73,9 +75,17 @@ class QuizCreator
 
             $correctCount = collect($choices)->filter(fn ($choice) => (bool) Arr::get($choice, 'is_correct'))->count();
 
-            if ($correctCount !== 1) {
+            if ($correctCount < 1) {
                 throw ValidationException::withMessages([
-                    "questions.$questionIndex.choices" => 'Chaque question doit avoir exactement une bonne réponse.',
+                    "questions.$questionIndex.choices" => 'Chaque question doit avoir au moins une bonne réponse.',
+                ]);
+            }
+
+            $normalizedChoices = collect($choices)
+                ->map(fn ($choice) => mb_strtolower(trim((string) Arr::get($choice, 'body')), 'UTF-8'));
+            if ($normalizedChoices->unique()->count() !== $normalizedChoices->count()) {
+                throw ValidationException::withMessages([
+                    "questions.$questionIndex.choices" => 'Les choix d’une question doivent être différents.',
                 ]);
             }
         }
@@ -86,6 +96,7 @@ class QuizCreator
         foreach ($questions as $questionIndex => $questionData) {
             $question = $quiz->questions()->create([
                 'body' => $questionData['body'],
+                'explanation' => $questionData['explanation'] ?? null,
                 'points' => $questionData['points'] ?? 1,
                 'order_index' => $questionIndex + 1,
             ]);

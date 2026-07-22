@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\SchoolClass;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -18,16 +19,50 @@ class AuthController extends Controller
             'name' => ['required', 'string', 'max:120'],
             'email' => ['required', 'email', 'max:190', 'unique:users,email'],
             'password' => ['required', 'confirmed', Password::min(8)],
-            'school_class_id' => ['required', Rule::exists('school_classes', 'id')],
+            'class_code' => ['required', 'string', 'max:30'],
         ]);
+
+        $class = SchoolClass::where('code', strtoupper(trim($data['class_code'])))->first();
+
+        if (!$class) {
+            throw ValidationException::withMessages([
+                'class_code' => 'Code de classe invalide. Demandez le code à votre formateur.',
+            ]);
+        }
 
         $user = User::create([
             'name' => $data['name'],
             'email' => $data['email'],
             'password' => Hash::make($data['password']),
             'role' => 'student',
-            'school_class_id' => $data['school_class_id'],
+            'school_class_id' => $class->id,
         ])->load('schoolClass');
+
+        return response()->json([
+            'token' => $user->createToken('web')->plainTextToken,
+            'user' => $user,
+        ], 201);
+    }
+
+    /** Inscription d'un formateur sur la formule gratuite. */
+    public function registerAdmin(Request $request)
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:120'],
+            'email' => ['required', 'email', 'max:190', 'unique:users,email'],
+            'password' => ['required', 'confirmed', Password::min(8)],
+        ]);
+
+        // Tout nouveau formateur commence avec la formule gratuite, sans expiration.
+        $user = User::create([
+            'name' => $data['name'],
+            'email' => $data['email'],
+            'password' => Hash::make($data['password']),
+            'role' => 'admin',
+            'subscription_plan' => User::PLAN_FREE,
+            'subscription_status' => 'active',
+            'subscribed_until' => null,
+        ]);
 
         return response()->json([
             'token' => $user->createToken('web')->plainTextToken,
@@ -47,6 +82,12 @@ class AuthController extends Controller
         if (!$user || !Hash::check($credentials['password'], $user->password)) {
             throw ValidationException::withMessages([
                 'email' => 'Identifiants invalides.',
+            ]);
+        }
+
+        if ($user->is_blocked) {
+            throw ValidationException::withMessages([
+                'email' => 'Votre compte a été bloqué. Contactez l\'administrateur.',
             ]);
         }
 
@@ -106,6 +147,49 @@ class AuthController extends Controller
     public function me(Request $request)
     {
         return response()->json($request->user()->load('schoolClass'));
+    }
+
+    /**
+     * Met à jour le nom et l'email du compte connecté.
+     */
+    public function updateProfile(Request $request)
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:120'],
+            'email' => ['required', 'email', 'max:190', Rule::unique('users', 'email')->ignore($user->id)],
+        ]);
+
+        $user->update($data);
+
+        return response()->json([
+            'message' => 'Profil mis à jour.',
+            'user' => $user->fresh()->load('schoolClass'),
+        ]);
+    }
+
+    /**
+     * Change le mot de passe du compte connecté.
+     */
+    public function updatePassword(Request $request)
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'current_password' => ['required', 'string'],
+            'password' => ['required', 'confirmed', Password::min(8)],
+        ]);
+
+        if (!Hash::check($data['current_password'], $user->password)) {
+            throw ValidationException::withMessages([
+                'current_password' => 'Le mot de passe actuel est incorrect.',
+            ]);
+        }
+
+        $user->update(['password' => Hash::make($data['password'])]);
+
+        return response()->json(['message' => 'Mot de passe modifié avec succès.']);
     }
 
     public function logout(Request $request)

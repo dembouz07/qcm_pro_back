@@ -17,6 +17,24 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Code d'inscription administrateur
+    |--------------------------------------------------------------------------
+    | Code secret requis pour créer un compte administrateur (formateur).
+    | À définir via la variable d'environnement ADMIN_REGISTRATION_CODE.
+    */
+    'admin_registration_code' => env('ADMIN_REGISTRATION_CODE', ''),
+
+    /*
+    | Emails ayant un accès illimité (sans abonnement requis).
+    | Séparés par des virgules via SUPER_ADMIN_EMAILS.
+    */
+    'super_admins' => array_filter(array_map(
+        'trim',
+        explode(',', env('SUPER_ADMIN_EMAILS', 'admin@example.com'))
+    )),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Environment
     |--------------------------------------------------------------------------
     |
