@@ -20,6 +20,7 @@ class Quiz extends Model
         'created_by',
         'starts_at',
         'ends_at',
+        'closed_at',
         'is_published',
         'show_corrections',
         'archived_at',
@@ -31,6 +32,7 @@ class Quiz extends Model
         return [
             'starts_at' => 'datetime',
             'ends_at' => 'datetime',
+            'closed_at' => 'datetime',
             'archived_at' => 'datetime',
             'is_published' => 'boolean',
             'show_corrections' => 'boolean',
@@ -66,12 +68,20 @@ class Quiz extends Model
 
     public function isLocked(): bool
     {
+        if ($this->isProgressive() || $this->starts_at === null) {
+            return false;
+        }
+
         return Carbon::now()->lt($this->starts_at);
     }
 
     public function isClosed(int $gracePeriodSeconds = 0): bool
     {
-        if ($this->ends_at === null) {
+        if (!$this->is_published || $this->archived_at !== null || $this->closed_at !== null) {
+            return true;
+        }
+
+        if ($this->isProgressive() || $this->ends_at === null) {
             return false;
         }
         
@@ -81,6 +91,6 @@ class Quiz extends Model
 
     public function isOpen(): bool
     {
-        return !$this->isLocked() && !$this->isClosed();
+        return $this->is_published && !$this->isLocked() && !$this->isClosed();
     }
 }

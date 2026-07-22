@@ -152,7 +152,32 @@ class QuizCreationTest extends TestCase
         ])->assertCreated();
 
         $quiz = Quiz::findOrFail($response->json('id'));
-        $quiz->update(['starts_at' => now()->subMinute()]);
+        $this->assertNull($quiz->starts_at);
+        $this->assertNull($quiz->ends_at);
+
+        $this->getJson("/api/public/quiz/{$quiz->access_token}")
+            ->assertOk()
+            ->assertJsonPath('is_open', true)
+            ->assertJsonPath('is_locked', false)
+            ->assertJsonPath('is_closed', false);
+
+        $this->postJson("/api/admin/quizzes/{$quiz->id}/close")
+            ->assertOk()
+            ->assertJsonStructure(['closed_at']);
+
+        $this->getJson("/api/public/quiz/{$quiz->access_token}")
+            ->assertOk()
+            ->assertJsonPath('is_open', false)
+            ->assertJsonPath('is_closed', true);
+
+        $this->postJson("/api/public/quiz/{$quiz->access_token}/start", [
+            'nom' => 'Diallo',
+            'prenom' => 'Awa',
+        ])->assertForbidden();
+
+        $this->postJson("/api/admin/quizzes/{$quiz->id}/reopen")
+            ->assertOk()
+            ->assertJsonPath('closed_at', null);
 
         $started = $this->postJson("/api/public/quiz/{$quiz->access_token}/start", [
             'nom' => 'Diallo',
@@ -236,8 +261,6 @@ class QuizCreationTest extends TestCase
         return [
             'title' => 'Diagnostic public',
             'description' => 'Créé par les tests automatisés.',
-            'starts_at' => now()->addHour()->toIso8601String(),
-            'ends_at' => now()->addHours(2)->toIso8601String(),
         ];
     }
 }

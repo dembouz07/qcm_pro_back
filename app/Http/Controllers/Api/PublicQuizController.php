@@ -33,8 +33,8 @@ class PublicQuizController extends Controller
             'type' => $quiz->type,
             'stage_threshold' => $quiz->stage_threshold,
             'require_stage_pass' => $quiz->require_stage_pass,
-            'starts_at' => $quiz->starts_at,
-            'ends_at' => $quiz->ends_at,
+            'starts_at' => $quiz->isProgressive() ? null : $quiz->starts_at,
+            'ends_at' => $quiz->isProgressive() ? null : $quiz->ends_at,
             'questions_count' => $quiz->questions_count,
             'is_locked' => $quiz->isLocked(),
             'is_closed' => $quiz->isClosed(),
@@ -91,8 +91,8 @@ class PublicQuizController extends Controller
                 'type' => 'progressive',
                 'stage_threshold' => $quiz->stage_threshold,
                 'require_stage_pass' => $quiz->require_stage_pass,
-                'starts_at' => $quiz->starts_at,
-                'ends_at' => $quiz->ends_at,
+                'starts_at' => null,
+                'ends_at' => null,
                 'stages' => $this->buildStages($quiz),
             ]);
         }

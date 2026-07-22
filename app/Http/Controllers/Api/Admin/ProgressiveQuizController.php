@@ -43,8 +43,6 @@ class ProgressiveQuizController extends Controller
             'description' => ['nullable', 'string'],
             'stage_threshold' => ['required', 'integer', 'min:1', 'max:20'],
             'require_stage_pass' => ['sometimes', 'boolean'],
-            'starts_at' => ['required', 'date'],
-            'ends_at' => ['nullable', 'date', 'after:starts_at'],
             'is_published' => ['sometimes', 'boolean'],
             'stages' => ['required', 'array', 'min:1'],
             'stages.*.name' => ['required', 'string', 'max:190'],

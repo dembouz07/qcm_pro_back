@@ -77,6 +77,8 @@ Route::prefix('admin')
             Route::post('quizzes/{quiz}/notify', [QuizController::class, 'notify']);
             Route::post('quizzes/{quiz}/archive', [QuizController::class, 'archive']);
             Route::post('quizzes/{quiz}/unarchive', [QuizController::class, 'unarchive']);
+            Route::post('quizzes/{quiz}/close', [QuizController::class, 'close']);
+            Route::post('quizzes/{quiz}/reopen', [QuizController::class, 'reopen']);
             Route::post('quizzes/import', [QuizImportController::class, 'store']);
             Route::post('quizzes/convert', [QuizConverterController::class, 'convert']);
 

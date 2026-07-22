@@ -32,8 +32,9 @@ class ProgressiveQuizCreator
                 'require_stage_pass' => $data['require_stage_pass'] ?? true,
                 'school_class_id' => null,
                 'created_by' => $admin?->id,
-                'starts_at' => $data['starts_at'],
-                'ends_at' => $data['ends_at'] ?? null,
+                'starts_at' => null,
+                'ends_at' => null,
+                'closed_at' => null,
                 'is_published' => $data['is_published'] ?? true,
                 'access_token' => Str::random(32),
             ]);
@@ -87,8 +88,8 @@ class ProgressiveQuizCreator
                 'stage_threshold' => $data['stage_threshold'] ?? 5,
                 'require_stage_pass' => $data['require_stage_pass'] ?? $quiz->require_stage_pass,
                 'school_class_id' => null,
-                'starts_at' => $data['starts_at'],
-                'ends_at' => $data['ends_at'] ?? null,
+                'starts_at' => null,
+                'ends_at' => null,
                 'is_published' => $data['is_published'] ?? true,
             ]);
 

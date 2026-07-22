@@ -82,6 +82,28 @@ class QuizController extends Controller
         return response()->json(['message' => 'QCM désarchivé.']);
     }
 
+    public function close(Request $request, Quiz $quiz)
+    {
+        $this->authorizeOwner($request, $quiz);
+        $quiz->update(['closed_at' => now()]);
+
+        return response()->json([
+            'message' => 'Le QCM est maintenant fermé.',
+            'closed_at' => $quiz->closed_at,
+        ]);
+    }
+
+    public function reopen(Request $request, Quiz $quiz)
+    {
+        $this->authorizeOwner($request, $quiz);
+        $quiz->update(['closed_at' => null]);
+
+        return response()->json([
+            'message' => 'Le QCM est de nouveau ouvert.',
+            'closed_at' => null,
+        ]);
+    }
+
     /**
      * Notifie par email les élèves de la classe du QCM (ouverture / rappel).
      */
