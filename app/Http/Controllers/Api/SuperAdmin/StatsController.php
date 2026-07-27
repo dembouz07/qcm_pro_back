@@ -22,9 +22,9 @@ class StatsController extends Controller
             ->pluck('total', 'role');
 
         $activeSubscriptions = User::where('subscription_status', 'active')
-            ->whereIn('subscription_plan', [User::PLAN_ESSENTIAL, User::PLAN_PREMIUM])
+            ->whereIn('subscription_plan', User::paidPlanIds())
             ->where('subscribed_until', '>', $now)
-            ->where('role', 'admin')
+            ->whereIn('role', ['admin', 'enterprise'])
             ->count();
 
         $revenue = (int) Payment::where('status', 'completed')->sum('amount');
@@ -34,6 +34,7 @@ class StatsController extends Controller
                 'total' => (int) User::count(),
                 'admins' => (int) ($usersByRole['admin'] ?? 0),
                 'students' => (int) ($usersByRole['student'] ?? 0),
+                'enterprises' => (int) ($usersByRole['enterprise'] ?? 0),
                 'superadmins' => (int) ($usersByRole['superadmin'] ?? 0),
                 'blocked' => (int) User::where('is_blocked', true)->count(),
             ],

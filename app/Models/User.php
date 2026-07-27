@@ -38,6 +38,7 @@ class User extends Authenticatable
     public const PLAN_FREE = 'free';
     public const PLAN_ESSENTIAL = 'essential';
     public const PLAN_PREMIUM = 'premium';
+    public const PLAN_ENTERPRISE = 'enterprise';
 
     public const PLAN_FEATURES = [
         self::PLAN_FREE => [
@@ -58,6 +59,11 @@ class User extends Authenticatable
             'quiz_smart',
             'surveys',
             'wrong_question_stats',
+        ],
+        self::PLAN_ENTERPRISE => [
+            'company_employees',
+            'mindset_assessments',
+            'mindset_progress',
         ],
     ];
 
@@ -96,6 +102,10 @@ class User extends Authenticatable
             return true;
         }
 
+        if ($this->isEnterprise()) {
+            return $this->isPaidSubscriptionActive();
+        }
+
         // La formule gratuite n'expire pas. Une formule payante expirée
         // revient automatiquement aux droits de la formule gratuite.
         return $this->effectiveSubscriptionPlan() === self::PLAN_FREE
@@ -104,7 +114,7 @@ class User extends Authenticatable
 
     public function isPaidSubscriptionActive(): bool
     {
-        return in_array($this->subscription_plan, [self::PLAN_ESSENTIAL, self::PLAN_PREMIUM], true)
+        return in_array($this->subscription_plan, self::paidPlanIds(), true)
             && $this->subscription_status === 'active'
             && $this->subscribed_until !== null
             && $this->subscribed_until->isFuture();
@@ -164,11 +174,33 @@ class User extends Authenticatable
             ],
             self::PLAN_PREMIUM => [
                 'id' => self::PLAN_PREMIUM,
-                'name' => 'Complète',
+                'name' => 'Formateur',
                 'price' => 5000,
                 'features' => self::PLAN_FEATURES[self::PLAN_PREMIUM],
             ],
+            self::PLAN_ENTERPRISE => [
+                'id' => self::PLAN_ENTERPRISE,
+                'name' => 'Entreprise',
+                'price' => 25000,
+                'features' => self::PLAN_FEATURES[self::PLAN_ENTERPRISE],
+            ],
         ];
+    }
+
+    public static function paidPlanIds(): array
+    {
+        return [self::PLAN_ESSENTIAL, self::PLAN_PREMIUM, self::PLAN_ENTERPRISE];
+    }
+
+    public function availableSubscriptionPlans(): array
+    {
+        $plans = self::subscriptionPlans();
+
+        return match ($this->role) {
+            'enterprise' => [self::PLAN_ENTERPRISE => $plans[self::PLAN_ENTERPRISE]],
+            'admin' => [self::PLAN_PREMIUM => $plans[self::PLAN_PREMIUM]],
+            default => [],
+        };
     }
 
     public function payments()
@@ -179,6 +211,11 @@ class User extends Authenticatable
     public function schoolClass()
     {
         return $this->belongsTo(SchoolClass::class);
+    }
+
+    public function company()
+    {
+        return $this->hasOne(Company::class, 'owner_id');
     }
 
     public function submissions()
@@ -194,5 +231,10 @@ class User extends Authenticatable
     public function isStudent(): bool
     {
         return $this->role === 'student';
+    }
+
+    public function isEnterprise(): bool
+    {
+        return $this->role === 'enterprise';
     }
 }
