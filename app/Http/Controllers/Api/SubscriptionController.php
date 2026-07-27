@@ -9,6 +9,7 @@ use App\Services\PayTechService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 
 class SubscriptionController extends Controller
 {
@@ -22,8 +23,11 @@ class SubscriptionController extends Controller
      */
     public function checkout(Request $request, PayTechService $paytech)
     {
+        $user = $request->user();
+        $availablePlans = array_keys($user->availableSubscriptionPlans());
+
         $data = $request->validate([
-            'plan' => ['required', 'string', 'in:' . User::PLAN_ESSENTIAL . ',' . User::PLAN_PREMIUM],
+            'plan' => ['required', 'string', Rule::in($availablePlans)],
         ]);
 
         try {
@@ -33,11 +37,11 @@ class SubscriptionController extends Controller
                 ], 503);
             }
 
-            $user = $request->user();
             $plan = $data['plan'];
             $planDetails = User::subscriptionPlans()[$plan];
             $amount = (int) $planDetails['price'];
             $frontend = rtrim((string) config('services.paytech.frontend_url'), '/');
+            $subscriptionPath = $user->role === 'enterprise' ? '/entreprise/abonnement' : '/admin/subscription';
             $refCommand = 'QCMPRO_' . strtoupper($plan) . '_' . $user->id . '_' . time();
 
             $payment = $paytech->requestPayment([
@@ -45,8 +49,8 @@ class SubscriptionController extends Controller
                 'command_name' => "Formule {$planDetails['name']} (1 mois) - {$user->email}",
                 'amount' => $amount,
                 'ref_command' => $refCommand,
-                'success_url' => $frontend . '/admin/subscription?paid=1',
-                'cancel_url' => $frontend . '/admin/subscription?canceled=1',
+                'success_url' => $frontend . $subscriptionPath . '?paid=1',
+                'cancel_url' => $frontend . $subscriptionPath . '?canceled=1',
                 'ipn_url' => url('/api/payments/paytech/ipn'),
                 'custom_field' => [
                     'user_id' => $user->id,
@@ -166,11 +170,11 @@ class SubscriptionController extends Controller
 
         $user = User::find($payment->user_id);
         if ($user) {
-            if (!in_array($plan, [User::PLAN_ESSENTIAL, User::PLAN_PREMIUM], true)) {
+            if (!in_array($plan, User::paidPlanIds(), true)) {
                 // Les anciens paiements donnaient accès à toutes les fonctionnalités.
-                $plan = in_array($user->subscription_plan, [User::PLAN_ESSENTIAL, User::PLAN_PREMIUM], true)
+                $plan = in_array($user->subscription_plan, User::paidPlanIds(), true)
                     ? $user->subscription_plan
-                    : User::PLAN_PREMIUM;
+                    : ($user->isEnterprise() ? User::PLAN_ENTERPRISE : User::PLAN_PREMIUM);
             }
 
             // Prolonge à partir de la date d'expiration si encore active, sinon à partir de maintenant.
@@ -195,7 +199,7 @@ class SubscriptionController extends Controller
             'subscribed_until' => $user->subscribed_until,
             'is_active' => $user->isPaidSubscriptionActive(),
             'features' => $user->plan_features,
-            'plans' => array_values(User::subscriptionPlans()),
+            'plans' => array_values($user->availableSubscriptionPlans()),
             'currency' => 'XOF',
         ];
     }

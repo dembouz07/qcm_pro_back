@@ -15,6 +15,10 @@ use App\Http\Controllers\Api\Student\StudentQuizController;
 use App\Http\Controllers\Api\SuperAdmin\StatsController;
 use App\Http\Controllers\Api\SuperAdmin\RevenueController;
 use App\Http\Controllers\Api\SuperAdmin\UserController as SuperAdminUserController;
+use App\Http\Controllers\Api\Enterprise\CompanyEmployeeController;
+use App\Http\Controllers\Api\Enterprise\EnterpriseDashboardController;
+use App\Http\Controllers\Api\Enterprise\MindsetAssessmentController;
+use App\Http\Controllers\Api\Enterprise\MindsetProgressController;
 use App\Http\Middleware\EnsureNotBlocked;
 use App\Http\Middleware\EnsurePlanFeature;
 use App\Http\Middleware\EnsureRole;
@@ -43,6 +47,7 @@ Route::post('payments/paytech/ipn', [SubscriptionController::class, 'ipn']);
 Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/register-admin', [AuthController::class, 'registerAdmin']);
+    Route::post('/register-enterprise', [AuthController::class, 'registerEnterprise']);
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('/check-email', [AuthController::class, 'checkEmail']);
@@ -98,6 +103,22 @@ Route::prefix('admin')
                 Route::post('surveys/{survey}/toggle', [SurveyController::class, 'toggle']);
                 Route::delete('surveys/{survey}', [SurveyController::class, 'destroy']);
             });
+        });
+    });
+
+Route::prefix('enterprise')
+    ->middleware(['auth:sanctum', EnsureNotBlocked::class, EnsureRole::class . ':enterprise'])
+    ->group(function () {
+        Route::get('subscription', [SubscriptionController::class, 'status']);
+        Route::post('subscription/checkout', [SubscriptionController::class, 'checkout']);
+        Route::post('subscription/verify', [SubscriptionController::class, 'verify']);
+
+        Route::middleware(EnsureSubscribed::class)->group(function () {
+            Route::get('dashboard', [EnterpriseDashboardController::class, 'index']);
+            Route::get('mindset-template', [MindsetAssessmentController::class, 'template']);
+            Route::apiResource('employees', CompanyEmployeeController::class);
+            Route::get('progress', [MindsetProgressController::class, 'index']);
+            Route::apiResource('assessments', MindsetAssessmentController::class)->except(['destroy']);
         });
     });
 
