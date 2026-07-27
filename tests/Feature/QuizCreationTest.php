@@ -89,8 +89,9 @@ class QuizCreationTest extends TestCase
     public function test_progressive_quiz_keeps_stage_names_and_reachable_threshold(): void
     {
         $response = $this->postJson('/api/admin/progressive-quizzes', [
-            ...$this->quizMetadata(),
+            ...$this->progressiveQuizMetadata(),
             'stage_threshold' => 2,
+            'require_stage_pass' => false,
             'stages' => [
                 ['name' => 'Fondations', 'questions' => ['Processus documentés ?', 'Rôles définis ?']],
                 ['name' => 'Maîtrise', 'questions' => ['Indicateurs suivis ?', 'Amélioration continue ?']],
@@ -99,6 +100,8 @@ class QuizCreationTest extends TestCase
 
         $response->assertCreated()
             ->assertJsonPath('type', 'progressive')
+            ->assertJsonPath('school_class_id', null)
+            ->assertJsonPath('require_stage_pass', false)
             ->assertJsonCount(4, 'questions');
 
         $this->assertDatabaseHas('questions', ['stage' => 1, 'stage_name' => 'Fondations']);
@@ -106,8 +109,9 @@ class QuizCreationTest extends TestCase
 
         $quizId = $response->json('id');
         $this->putJson("/api/admin/progressive-quizzes/{$quizId}", [
-            ...$this->quizMetadata(),
+            ...$this->progressiveQuizMetadata(),
             'stage_threshold' => 1,
+            'require_stage_pass' => true,
             'stages' => [
                 ['name' => 'Nouveau stade', 'questions' => ['Question mise à jour ?']],
             ],
@@ -123,7 +127,7 @@ class QuizCreationTest extends TestCase
     public function test_progressive_quiz_rejects_a_threshold_higher_than_a_stage_question_count(): void
     {
         $response = $this->postJson('/api/admin/progressive-quizzes', [
-            ...$this->quizMetadata(),
+            ...$this->progressiveQuizMetadata(),
             'stage_threshold' => 2,
             'stages' => [
                 ['name' => 'Stade court', 'questions' => ['Une seule question ?']],
@@ -133,6 +137,88 @@ class QuizCreationTest extends TestCase
         $response->assertUnprocessable()
             ->assertJsonValidationErrors('stages.0.questions');
         $this->assertDatabaseCount('quizzes', 0);
+    }
+
+    public function test_public_progressive_quiz_only_requires_name_and_first_name(): void
+    {
+        $response = $this->postJson('/api/admin/progressive-quizzes', [
+            ...$this->progressiveQuizMetadata(),
+            'stage_threshold' => 1,
+            'require_stage_pass' => false,
+            'stages' => [
+                ['name' => 'Découverte', 'questions' => ['Stade 1 validé ?']],
+                ['name' => 'Confirmation', 'questions' => ['Stade 2 validé ?']],
+            ],
+        ])->assertCreated();
+
+        $quiz = Quiz::findOrFail($response->json('id'));
+        $this->assertNull($quiz->starts_at);
+        $this->assertNull($quiz->ends_at);
+
+        $this->getJson("/api/public/quiz/{$quiz->access_token}")
+            ->assertOk()
+            ->assertJsonPath('is_open', true)
+            ->assertJsonPath('is_locked', false)
+            ->assertJsonPath('is_closed', false);
+
+        $this->postJson("/api/admin/quizzes/{$quiz->id}/close")
+            ->assertOk()
+            ->assertJsonStructure(['closed_at']);
+
+        $this->getJson("/api/public/quiz/{$quiz->access_token}")
+            ->assertOk()
+            ->assertJsonPath('is_open', false)
+            ->assertJsonPath('is_closed', true);
+
+        $this->postJson("/api/public/quiz/{$quiz->access_token}/start", [
+            'nom' => 'Diallo',
+            'prenom' => 'Awa',
+        ])->assertForbidden();
+
+        $this->postJson("/api/admin/quizzes/{$quiz->id}/reopen")
+            ->assertOk()
+            ->assertJsonPath('closed_at', null);
+
+        $started = $this->postJson("/api/public/quiz/{$quiz->access_token}/start", [
+            'nom' => 'Diallo',
+            'prenom' => 'Awa',
+        ])->assertOk()
+            ->assertJsonPath('require_stage_pass', false)
+            ->assertJsonCount(2, 'stages');
+
+        $stages = $started->json('stages');
+        $firstQuestion = $stages[0]['questions'][0];
+        $secondQuestion = $stages[1]['questions'][0];
+        $firstYes = collect($firstQuestion['choices'])->firstWhere('is_oui', true);
+        $secondYes = collect($secondQuestion['choices'])->firstWhere('is_oui', true);
+
+        $payload = [
+            'nom' => 'Diallo',
+            'prenom' => 'Awa',
+            'answers' => [
+                ['question_id' => $firstQuestion['id'], 'choice_id' => $firstYes['id']],
+                ['question_id' => $secondQuestion['id'], 'choice_id' => $secondYes['id']],
+            ],
+        ];
+
+        $this->postJson("/api/public/quiz/{$quiz->access_token}/submit", $payload)
+            ->assertCreated()
+            ->assertJsonPath('stade_atteint', 2);
+
+        $this->assertDatabaseHas('submissions', [
+            'quiz_id' => $quiz->id,
+            'participant_nom' => 'Diallo',
+            'participant_prenom' => 'Awa',
+            'participant_referentiel' => null,
+            'stade_atteint' => 2,
+        ]);
+
+        $quiz->update(['require_stage_pass' => true]);
+        $payload['nom'] = 'Ndiaye';
+
+        $this->postJson("/api/public/quiz/{$quiz->access_token}/submit", $payload)
+            ->assertCreated()
+            ->assertJsonPath('stade_atteint', 1);
     }
 
     public function test_quiz_cannot_use_another_admin_class(): void
@@ -167,6 +253,14 @@ class QuizCreationTest extends TestCase
             'school_class_id' => $this->class->id,
             'starts_at' => now()->addHour()->toIso8601String(),
             'ends_at' => now()->addHours(2)->toIso8601String(),
+        ];
+    }
+
+    private function progressiveQuizMetadata(): array
+    {
+        return [
+            'title' => 'Diagnostic public',
+            'description' => 'Créé par les tests automatisés.',
         ];
     }
 }

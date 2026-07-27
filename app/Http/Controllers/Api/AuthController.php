@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Company;
 use App\Models\SchoolClass;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
@@ -53,16 +55,52 @@ class AuthController extends Controller
             'password' => ['required', 'confirmed', Password::min(8)],
         ]);
 
-        // Tout nouveau formateur commence avec la formule gratuite, sans expiration.
+        // Le premier mois donne accès à toutes les fonctionnalités formateur.
         $user = User::create([
             'name' => $data['name'],
             'email' => $data['email'],
             'password' => Hash::make($data['password']),
             'role' => 'admin',
-            'subscription_plan' => User::PLAN_FREE,
+            'subscription_plan' => User::PLAN_PREMIUM,
             'subscription_status' => 'active',
-            'subscribed_until' => null,
+            'subscribed_until' => now()->addMonth(),
         ]);
+
+        return response()->json([
+            'token' => $user->createToken('web')->plainTextToken,
+            'user' => $user,
+        ], 201);
+    }
+
+    public function registerEnterprise(Request $request)
+    {
+        $data = $request->validate([
+            'company_name' => ['required', 'string', 'max:190'],
+            'industry' => ['nullable', 'string', 'max:190'],
+            'name' => ['required', 'string', 'max:120'],
+            'email' => ['required', 'email', 'max:190', 'unique:users,email'],
+            'password' => ['required', 'confirmed', Password::min(8)],
+        ]);
+
+        $user = DB::transaction(function () use ($data) {
+            $user = User::create([
+                'name' => $data['name'],
+                'email' => $data['email'],
+                'password' => Hash::make($data['password']),
+                'role' => 'enterprise',
+                'subscription_plan' => User::PLAN_ENTERPRISE,
+                'subscription_status' => 'inactive',
+                'subscribed_until' => null,
+            ]);
+
+            Company::create([
+                'owner_id' => $user->id,
+                'name' => $data['company_name'],
+                'industry' => $data['industry'] ?? null,
+            ]);
+
+            return $user->load('company');
+        });
 
         return response()->json([
             'token' => $user->createToken('web')->plainTextToken,
@@ -93,7 +131,7 @@ class AuthController extends Controller
 
         return response()->json([
             'token' => $user->createToken('web')->plainTextToken,
-            'user' => $user->load('schoolClass'),
+            'user' => $user->load(['schoolClass', 'company']),
         ]);
     }
 
@@ -146,7 +184,7 @@ class AuthController extends Controller
 
     public function me(Request $request)
     {
-        return response()->json($request->user()->load('schoolClass'));
+        return response()->json($request->user()->load(['schoolClass', 'company']));
     }
 
     /**
@@ -165,7 +203,7 @@ class AuthController extends Controller
 
         return response()->json([
             'message' => 'Profil mis à jour.',
-            'user' => $user->fresh()->load('schoolClass'),
+            'user' => $user->fresh()->load(['schoolClass', 'company']),
         ]);
     }
 

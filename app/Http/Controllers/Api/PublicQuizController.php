@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Choice;
 use App\Models\Quiz;
 use App\Models\Submission;
+use App\Services\ProgressiveStageResultCalculator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -31,8 +32,9 @@ class PublicQuizController extends Controller
             'description' => $quiz->description,
             'type' => $quiz->type,
             'stage_threshold' => $quiz->stage_threshold,
-            'starts_at' => $quiz->starts_at,
-            'ends_at' => $quiz->ends_at,
+            'require_stage_pass' => $quiz->require_stage_pass,
+            'starts_at' => $quiz->isProgressive() ? null : $quiz->starts_at,
+            'ends_at' => $quiz->isProgressive() ? null : $quiz->ends_at,
             'questions_count' => $quiz->questions_count,
             'is_locked' => $quiz->isLocked(),
             'is_closed' => $quiz->isClosed(),
@@ -67,15 +69,11 @@ class PublicQuizController extends Controller
         $data = $request->validate([
             'nom' => ['required', 'string', 'max:100'],
             'prenom' => ['required', 'string', 'max:100'],
-            'referentiel' => ['required', 'string', 'max:200'],
+            'referentiel' => [$quiz->isProgressive() ? 'nullable' : 'required', 'string', 'max:200'],
         ]);
 
         // Vérifier si cette personne a déjà soumis
-        $alreadySubmitted = Submission::where('quiz_id', $quiz->id)
-            ->where('participant_nom', $data['nom'])
-            ->where('participant_prenom', $data['prenom'])
-            ->where('participant_referentiel', $data['referentiel'])
-            ->exists();
+        $alreadySubmitted = $this->hasAlreadySubmitted($quiz, $data);
 
         if ($alreadySubmitted) {
             return response()->json([
@@ -92,8 +90,9 @@ class PublicQuizController extends Controller
                 'description' => $quiz->description,
                 'type' => 'progressive',
                 'stage_threshold' => $quiz->stage_threshold,
-                'starts_at' => $quiz->starts_at,
-                'ends_at' => $quiz->ends_at,
+                'require_stage_pass' => $quiz->require_stage_pass,
+                'starts_at' => null,
+                'ends_at' => null,
                 'stages' => $this->buildStages($quiz),
             ]);
         }
@@ -182,7 +181,7 @@ class PublicQuizController extends Controller
     /**
      * Soumettre les réponses en mode public (sans auth).
      */
-    public function submit(Request $request, string $token)
+    public function submit(Request $request, string $token, ProgressiveStageResultCalculator $stageCalculator)
     {
         $quiz = Quiz::where('access_token', $token)->first();
 
@@ -207,7 +206,7 @@ class PublicQuizController extends Controller
         $data = $request->validate([
             'nom' => ['required', 'string', 'max:100'],
             'prenom' => ['required', 'string', 'max:100'],
-            'referentiel' => ['required', 'string', 'max:200'],
+            'referentiel' => [$quiz->isProgressive() ? 'nullable' : 'required', 'string', 'max:200'],
             'auto_submit' => ['sometimes', 'boolean'],
             'answers' => ['nullable', 'array'],
             'answers.*.question_id' => ['required', 'integer'],
@@ -215,11 +214,7 @@ class PublicQuizController extends Controller
         ]);
 
         // Vérifier doublon
-        $alreadySubmitted = Submission::where('quiz_id', $quiz->id)
-            ->where('participant_nom', $data['nom'])
-            ->where('participant_prenom', $data['prenom'])
-            ->where('participant_referentiel', $data['referentiel'])
-            ->exists();
+        $alreadySubmitted = $this->hasAlreadySubmitted($quiz, $data);
 
         if ($alreadySubmitted) {
             return response()->json([
@@ -230,7 +225,7 @@ class PublicQuizController extends Controller
         $quiz->load('questions.choices');
 
         if ($quiz->isProgressive()) {
-            return $this->submitProgressive($quiz, $data);
+            return $this->submitProgressive($quiz, $data, $stageCalculator);
         }
 
         $questions = $quiz->questions->keyBy('id');
@@ -253,7 +248,7 @@ class PublicQuizController extends Controller
                 'quiz_id' => $quiz->id,
                 'participant_nom' => $data['nom'],
                 'participant_prenom' => $data['prenom'],
-                'participant_referentiel' => $data['referentiel'],
+                'participant_referentiel' => $data['referentiel'] ?? null,
                 'score' => 0,
                 'total_points' => $totalPoints,
                 'percentage' => 0,
@@ -311,9 +306,13 @@ class PublicQuizController extends Controller
 
     /**
      * Soumission d'un diagnostic progressif : calcule le score par stade
-     * et le stade atteint (dernier stade validé : score >= seuil).
+     * et le stade atteint (le seuil de « Oui » bloque le passage au stade suivant).
      */
-    private function submitProgressive(Quiz $quiz, array $data)
+    private function submitProgressive(
+        Quiz $quiz,
+        array $data,
+        ProgressiveStageResultCalculator $stageCalculator,
+    )
     {
         $questions = $quiz->questions->keyBy('id');
         $submittedAnswers = collect($data['answers'] ?? [])
@@ -330,7 +329,7 @@ class PublicQuizController extends Controller
                 'quiz_id' => $quiz->id,
                 'participant_nom' => $data['nom'],
                 'participant_prenom' => $data['prenom'],
-                'participant_referentiel' => $data['referentiel'],
+                'participant_referentiel' => $data['referentiel'] ?? null,
                 'score' => 0,
                 'total_points' => (float) $quiz->questions->sum('points'),
                 'percentage' => 0,
@@ -369,15 +368,24 @@ class PublicQuizController extends Controller
             return $submission;
         });
 
-        // Déterminer le stade atteint : dernier stade dont le score >= seuil
+        // Avec le blocage actif, atteindre le seuil arrête la progression au stade courant.
+        // Sinon, le stade atteint est le dernier stade effectivement parcouru.
         $threshold = (int) $quiz->stage_threshold;
         ksort($stageScores);
-        $stadeAtteint = 1;
-        foreach ($stageScores as $stage => $oui) {
-            if ($oui >= $threshold) {
-                $stadeAtteint = max($stadeAtteint, $stage);
-            }
-        }
+        $stageNumbers = $quiz->questions
+            ->pluck('stage')
+            ->filter()
+            ->map(fn ($stage) => (int) $stage)
+            ->unique()
+            ->sort()
+            ->values();
+
+        $stadeAtteint = $stageCalculator->calculate(
+            $stageNumbers,
+            $stageScores,
+            $threshold,
+            $quiz->require_stage_pass,
+        );
 
         $submission->update([
             'score' => $globalScore,
@@ -391,5 +399,19 @@ class PublicQuizController extends Controller
             'stade_atteint' => $stadeAtteint,
             'stage_scores' => $stageScores,
         ], 201);
+    }
+
+    private function hasAlreadySubmitted(Quiz $quiz, array $participant): bool
+    {
+        $query = Submission::query()
+            ->where('quiz_id', $quiz->id)
+            ->where('participant_nom', $participant['nom'])
+            ->where('participant_prenom', $participant['prenom']);
+
+        if (!$quiz->isProgressive()) {
+            $query->where('participant_referentiel', $participant['referentiel']);
+        }
+
+        return $query->exists();
     }
 }

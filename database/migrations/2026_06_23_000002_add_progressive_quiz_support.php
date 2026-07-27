@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::table('quizzes', function (Blueprint $table) {
             // 'standard' = QCM classique | 'progressive' = diagnostic par stades
             $table->string('type', 20)->default('standard')->after('description');
-            // Nombre de "Oui" requis pour valider un stade et passer au suivant
+            // Nombre de "Oui" à partir duquel le passage au stade suivant est bloqué
             $table->unsignedTinyInteger('stage_threshold')->default(5)->after('type');
         });
 

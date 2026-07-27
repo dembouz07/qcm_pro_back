@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Quiz;
 use App\Models\User;
 use App\Services\QuizCreator;
+use App\Services\QuestionStatisticsCalculator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -81,6 +82,28 @@ class QuizController extends Controller
         return response()->json(['message' => 'QCM désarchivé.']);
     }
 
+    public function close(Request $request, Quiz $quiz)
+    {
+        $this->authorizeOwner($request, $quiz);
+        $quiz->update(['closed_at' => now()]);
+
+        return response()->json([
+            'message' => 'Le QCM est maintenant fermé.',
+            'closed_at' => $quiz->closed_at,
+        ]);
+    }
+
+    public function reopen(Request $request, Quiz $quiz)
+    {
+        $this->authorizeOwner($request, $quiz);
+        $quiz->update(['closed_at' => null]);
+
+        return response()->json([
+            'message' => 'Le QCM est de nouveau ouvert.',
+            'closed_at' => null,
+        ]);
+    }
+
     /**
      * Notifie par email les élèves de la classe du QCM (ouverture / rappel).
      */
@@ -88,6 +111,15 @@ class QuizController extends Controller
     {
         $this->authorizeOwner($request, $quiz);
         $quiz->load('schoolClass');
+
+        if ($quiz->school_class_id === null) {
+            return response()->json([
+                'message' => 'Ce QCM est public et n’est associé à aucune classe.',
+                'sent' => 0,
+                'failed' => 0,
+                'total' => 0,
+            ], 422);
+        }
 
         $students = User::where('role', 'student')
             ->where('school_class_id', $quiz->school_class_id)
@@ -142,7 +174,7 @@ class QuizController extends Controller
      * Statistiques par question : combien de fois chaque question a été ratée
      * (pour améliorer les questions les plus difficiles).
      */
-    public function stats(Request $request, Quiz $quiz)
+    public function stats(Request $request, Quiz $quiz, QuestionStatisticsCalculator $calculator)
     {
         $this->authorizeOwner($request, $quiz);
         $quiz->load('questions');
@@ -150,23 +182,13 @@ class QuizController extends Controller
         $submissionIds = $quiz->submissions()->pluck('id');
 
         $answers = \App\Models\SubmissionAnswer::whereIn('submission_id', $submissionIds)
-            ->get(['question_id', 'is_correct']);
-        $byQuestion = $answers->groupBy('question_id');
+            ->get(['question_id', 'choice_id', 'selected_choice_ids', 'is_correct']);
 
-        $questions = $quiz->questions->map(function ($q) use ($byQuestion) {
-            $group = $byQuestion->get($q->id, collect());
-            $total = $group->count();
-            $wrong = $group->filter(fn ($a) => !$a->is_correct)->count();
-
-            return [
-                'id' => $q->id,
-                'body' => $q->body,
-                'total' => $total,
-                'wrong' => $wrong,
-                'correct' => $total - $wrong,
-                'wrong_rate' => $total > 0 ? (int) round($wrong / $total * 100) : 0,
-            ];
-        })->sortByDesc('wrong')->values();
+        $questions = $calculator->calculate(
+            $quiz->questions,
+            $answers,
+            $submissionIds->count(),
+        );
 
         return response()->json([
             'submissions' => $submissionIds->count(),
