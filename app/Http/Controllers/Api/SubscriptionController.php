@@ -45,7 +45,7 @@ class SubscriptionController extends Controller
             $refCommand = 'QCMPRO_' . strtoupper($plan) . '_' . $user->id . '_' . time();
 
             $payment = $paytech->requestPayment([
-                'item_name' => 'QCM Pro - Formule ' . $planDetails['name'],
+                'item_name' => 'Check Performance - Formule ' . $planDetails['name'],
                 'command_name' => "Formule {$planDetails['name']} (1 mois) - {$user->email}",
                 'amount' => $amount,
                 'ref_command' => $refCommand,

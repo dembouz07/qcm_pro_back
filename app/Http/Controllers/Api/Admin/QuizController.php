@@ -138,7 +138,7 @@ class QuizController extends Controller
         $frontend = rtrim((string) config('services.paytech.frontend_url'), '/');
         $className = $quiz->schoolClass?->name ?? '';
         $opening = $quiz->starts_at ? $quiz->starts_at->format('d/m/Y à H:i') : 'bientôt';
-        $subject = "QCM Pro — « {$quiz->title} » disponible";
+        $subject = "Check Performance — « {$quiz->title} » disponible";
 
         $sent = 0;
         $failed = 0;
@@ -149,7 +149,7 @@ class QuizController extends Controller
                 . "• Titre : {$quiz->title}\n"
                 . "• Ouverture : {$opening}\n\n"
                 . "Connectez-vous pour le passer : {$frontend}/login\n\n"
-                . "— QCM Pro";
+                . "— Check Performance";
 
             try {
                 Mail::raw($body, function ($message) use ($student, $subject) {
