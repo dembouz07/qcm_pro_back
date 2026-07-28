@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Submission;
+use App\Models\User;
 use Illuminate\Http\Request;
 
 class ResultController extends Controller
@@ -88,6 +89,68 @@ class ResultController extends Controller
                 'class' => $submission->user?->schoolClass?->name ?? $quiz?->schoolClass?->name,
             ],
             'correction' => $correction,
+        ]);
+    }
+
+    public function studentResults(Request $request, User $student)
+    {
+        $student->load('schoolClass');
+
+        if (
+            !$student->isStudent()
+            || $student->schoolClass === null
+            || (int) $student->schoolClass->owner_id !== (int) $request->user()->id
+        ) {
+            abort(response()->json(['message' => 'Cet élève ne fait pas partie de vos classes.'], 403));
+        }
+
+        $submissions = Submission::query()
+            ->where('user_id', $student->id)
+            ->whereHas('quiz', fn ($query) => $query->where('created_by', $request->user()->id))
+            ->with('quiz.schoolClass')
+            ->latest('submitted_at')
+            ->get();
+
+        $gradedSubmissions = $submissions
+            ->filter(fn (Submission $submission) => !$submission->quiz?->isProgressive());
+
+        return response()->json([
+            'student' => [
+                'id' => $student->id,
+                'name' => $student->name,
+                'email' => $student->email,
+                'class' => [
+                    'id' => $student->schoolClass->id,
+                    'name' => $student->schoolClass->name,
+                ],
+            ],
+            'stats' => [
+                'submissions_count' => $submissions->count(),
+                'graded_count' => $gradedSubmissions->count(),
+                'average_note' => $gradedSubmissions->isEmpty()
+                    ? null
+                    : round((float) $gradedSubmissions->avg('note_sur_20'), 2),
+                'best_note' => $gradedSubmissions->isEmpty()
+                    ? null
+                    : round((float) $gradedSubmissions->max('note_sur_20'), 2),
+                'last_submission_at' => $submissions->first()?->submitted_at,
+            ],
+            'results' => $submissions->map(fn (Submission $submission) => [
+                'id' => $submission->id,
+                'score' => $submission->score,
+                'total_points' => $submission->total_points,
+                'percentage' => $submission->percentage,
+                'note_sur_20' => $submission->note_sur_20,
+                'stade_atteint' => $submission->stade_atteint,
+                'stage_scores' => $submission->stage_scores,
+                'submitted_at' => $submission->submitted_at,
+                'quiz' => [
+                    'id' => $submission->quiz?->id,
+                    'title' => $submission->quiz?->title,
+                    'type' => $submission->quiz?->type,
+                    'class' => $submission->quiz?->schoolClass?->name,
+                ],
+            ])->values(),
         ]);
     }
 }

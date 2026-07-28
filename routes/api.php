@@ -92,6 +92,7 @@ Route::prefix('admin')
             Route::put('progressive-quizzes/{quiz}', [ProgressiveQuizController::class, 'update']);
 
             Route::get('results', [ResultController::class, 'index']);
+            Route::get('students/{student}/results', [ResultController::class, 'studentResults']);
             Route::get('results/{submission}', [ResultController::class, 'show']);
 
             // Sondages / questionnaires anonymes
