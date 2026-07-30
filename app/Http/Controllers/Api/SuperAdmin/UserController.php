@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\SuperAdmin;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class UserController extends Controller
 {
@@ -21,7 +22,7 @@ class UserController extends Controller
         if ($search = $request->query('search')) {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%");
+                    ->orWhere('email', 'like', "%{$search}%");
             });
         }
 
@@ -60,6 +61,30 @@ class UserController extends Controller
         return response()->json([
             'message' => 'Utilisateur débloqué.',
             'user' => $user,
+        ]);
+    }
+
+    public function destroy(Request $request, User $user)
+    {
+        if ($user->id === $request->user()->id) {
+            return response()->json([
+                'message' => 'Vous ne pouvez pas supprimer votre propre compte.',
+            ], 422);
+        }
+
+        if ($user->isPlatformAdmin() || $user->isSuperAdmin()) {
+            return response()->json([
+                'message' => 'Impossible de supprimer un super-administrateur.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($user) {
+            $user->tokens()->delete();
+            $user->delete();
+        });
+
+        return response()->json([
+            'message' => 'Utilisateur supprimé définitivement.',
         ]);
     }
 }

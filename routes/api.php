@@ -142,4 +142,5 @@ Route::prefix('superadmin')
         Route::get('users', [SuperAdminUserController::class, 'index']);
         Route::post('users/{user}/block', [SuperAdminUserController::class, 'block']);
         Route::post('users/{user}/unblock', [SuperAdminUserController::class, 'unblock']);
+        Route::delete('users/{user}', [SuperAdminUserController::class, 'destroy']);
     });
