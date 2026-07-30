@@ -223,6 +223,28 @@ class User extends Authenticatable
         return $this->hasMany(Submission::class);
     }
 
+    public function quizzes()
+    {
+        return $this->hasMany(Quiz::class, 'created_by');
+    }
+
+    public function receivedSubmissions()
+    {
+        return $this->hasManyThrough(
+            Submission::class,
+            Quiz::class,
+            'created_by',
+            'quiz_id',
+            'id',
+            'id'
+        );
+    }
+
+    public function mindsetAssessments()
+    {
+        return $this->hasMany(MindsetAssessment::class, 'evaluator_id');
+    }
+
     public function isAdmin(): bool
     {
         return $this->role === 'admin';

@@ -12,7 +12,13 @@ class UserController extends Controller
     public function index(Request $request)
     {
         $query = User::query()
-            ->withCount(['submissions', 'payments'])
+            ->withCount([
+                'submissions',
+                'payments',
+                'quizzes',
+                'receivedSubmissions',
+                'mindsetAssessments',
+            ])
             ->orderByDesc('created_at');
 
         if ($role = $request->query('role')) {
