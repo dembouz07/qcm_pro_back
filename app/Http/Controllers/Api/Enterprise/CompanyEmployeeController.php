@@ -25,7 +25,16 @@ class CompanyEmployeeController extends EnterpriseController
 
     public function store(Request $request)
     {
-        $employee = $this->company($request)->employees()->create($this->validated($request));
+        $company = $this->company($request);
+        $limit = $request->user()->employeeLimit();
+
+        if ($limit !== null && $company->employees()->count() >= $limit) {
+            return response()->json([
+                'message' => "Votre formule est limitée à {$limit} collaborateurs. Passez à la formule supérieure pour en ajouter.",
+            ], 422);
+        }
+
+        $employee = $company->employees()->create($this->validated($request));
 
         return response()->json($employee, 201);
     }

@@ -14,6 +14,9 @@ class MindsetAssessment extends Model
         'company_employee_id',
         'evaluator_id',
         'type',
+        'methodology_version',
+        'methodology_hash',
+        'methodology_snapshot',
         'assessed_at',
         'total_score',
         'level',
@@ -28,6 +31,7 @@ class MindsetAssessment extends Model
             'assessed_at' => 'date',
             'next_review_at' => 'date',
             'action_items' => 'array',
+            'methodology_snapshot' => 'array',
         ];
     }
 

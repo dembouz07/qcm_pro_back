@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\ProductEventController;
 use App\Http\Controllers\Api\PublicQuizController;
 use App\Http\Controllers\Api\PublicSurveyController;
 use App\Http\Controllers\Api\SubscriptionController;
@@ -13,6 +14,7 @@ use App\Http\Controllers\Api\Admin\ProgressiveQuizController;
 use App\Http\Controllers\Api\Admin\ResultController;
 use App\Http\Controllers\Api\Student\StudentQuizController;
 use App\Http\Controllers\Api\SuperAdmin\StatsController;
+use App\Http\Controllers\Api\SuperAdmin\ValidationMetricsController;
 use App\Http\Controllers\Api\SuperAdmin\RevenueController;
 use App\Http\Controllers\Api\SuperAdmin\UserController as SuperAdminUserController;
 use App\Http\Controllers\Api\Enterprise\CompanyEmployeeController;
@@ -27,35 +29,43 @@ use Illuminate\Support\Facades\Route;
 
 // Routes publiques pour accès au QCM via lien (sans authentification)
 Route::prefix('public/quiz')->group(function () {
-    Route::get('/{token}', [PublicQuizController::class, 'show']);
-    Route::post('/{token}/start', [PublicQuizController::class, 'start']);
-    Route::post('/{token}/submit', [PublicQuizController::class, 'submit']);
+    Route::get('/{token}', [PublicQuizController::class, 'show'])->middleware('throttle:public-quiz-show');
+    Route::post('/{token}/start', [PublicQuizController::class, 'start'])->middleware('throttle:public-quiz-start');
+    Route::post('/{token}/submit', [PublicQuizController::class, 'submit'])->middleware('throttle:public-quiz-submit');
 });
 
-// Permet à un participant de retrouver ses notes via son identité
-Route::post('public/my-results', [PublicQuizController::class, 'myResults']);
+// Permet à un participant de rouvrir un résultat avec son code secret temporaire.
+Route::post('public/my-results', [PublicQuizController::class, 'myResults'])->middleware('throttle:public-result');
+Route::post('public/events', [ProductEventController::class, 'publicEvent'])->middleware('throttle:public-event');
+
+Route::post('events', [ProductEventController::class, 'authenticatedEvent'])
+    ->middleware(['auth:sanctum', EnsureNotBlocked::class, 'throttle:30,1']);
 
 // Sondages / questionnaires publics anonymes (sans authentification)
 Route::prefix('public/surveys')->group(function () {
-    Route::get('/{token}', [PublicSurveyController::class, 'show']);
-    Route::post('/{token}/respond', [PublicSurveyController::class, 'respond']);
+    Route::get('/{token}', [PublicSurveyController::class, 'show'])->middleware('throttle:public-survey-show');
+    Route::post('/{token}/respond', [PublicSurveyController::class, 'respond'])->middleware('throttle:public-survey-submit');
 });
 
 // Notification IPN PayTech (public)
 Route::post('payments/paytech/ipn', [SubscriptionController::class, 'ipn']);
 
 Route::prefix('auth')->group(function () {
-    Route::post('/register', [AuthController::class, 'register']);
-    Route::post('/register-admin', [AuthController::class, 'registerAdmin']);
-    Route::post('/register-enterprise', [AuthController::class, 'registerEnterprise']);
-    Route::post('/login', [AuthController::class, 'login']);
-    Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
-    Route::post('/check-email', [AuthController::class, 'checkEmail']);
+    Route::middleware('throttle:5,1')->group(function () {
+        Route::post('/register', [AuthController::class, 'register']);
+        Route::post('/register-admin', [AuthController::class, 'registerAdmin']);
+        Route::post('/register-enterprise', [AuthController::class, 'registerEnterprise']);
+        Route::post('/login', [AuthController::class, 'login']);
+        Route::post('/token', [AuthController::class, 'mobileToken']);
+        Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+        Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+    });
 
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', EnsureNotBlocked::class])->group(function () {
         Route::get('/me', [AuthController::class, 'me']);
         Route::put('/profile', [AuthController::class, 'updateProfile']);
         Route::put('/password', [AuthController::class, 'updatePassword']);
+        Route::post('/export', [AuthController::class, 'exportData']);
         Route::post('/logout', [AuthController::class, 'logout']);
     });
 });
@@ -135,9 +145,10 @@ Route::prefix('student')
 
 // Espace super-administrateur de plateforme (accès global)
 Route::prefix('superadmin')
-    ->middleware(['auth:sanctum', EnsureRole::class . ':superadmin'])
+    ->middleware(['auth:sanctum', EnsureNotBlocked::class, EnsureRole::class . ':superadmin'])
     ->group(function () {
         Route::get('stats', [StatsController::class, 'index']);
+        Route::get('validation-metrics', [ValidationMetricsController::class, 'index']);
         Route::get('revenue', [RevenueController::class, 'index']);
         Route::get('users', [SuperAdminUserController::class, 'index']);
         Route::post('users/{user}/block', [SuperAdminUserController::class, 'block']);

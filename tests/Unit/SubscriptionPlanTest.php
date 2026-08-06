@@ -14,6 +14,9 @@ class SubscriptionPlanTest extends TestCase
         $this->assertSame(0, $plans[User::PLAN_FREE]['price']);
         $this->assertSame(3000, $plans[User::PLAN_ESSENTIAL]['price']);
         $this->assertSame(5000, $plans[User::PLAN_PREMIUM]['price']);
+        $this->assertSame(50000, $plans[User::PLAN_PREMIUM]['annual_price']);
+        $this->assertSame(25000, $plans[User::PLAN_ENTERPRISE]['price']);
+        $this->assertSame(75000, $plans[User::PLAN_ENTERPRISE_TEAM]['price']);
     }
 
     public function test_free_plan_only_exposes_the_three_qcm_creation_modes(): void

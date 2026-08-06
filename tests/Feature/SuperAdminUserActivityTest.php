@@ -23,6 +23,7 @@ class SuperAdminUserActivityTest extends TestCase
         $trainer = User::factory()->create(['role' => 'admin']);
         $class = SchoolClass::create([
             'name' => 'Classe activité',
+            'academic_year' => '2026-2027',
             'code' => 'ACTIVITY',
             'owner_id' => $trainer->id,
         ]);

@@ -41,6 +41,45 @@ class Quiz extends Model
         ];
     }
 
+    protected static function booted(): void
+    {
+        static::created(function (Quiz $quiz): void {
+            $quiz->recordLifecycleEvent('quiz_created');
+
+            if ($quiz->is_published) {
+                $quiz->recordLifecycleEvent('quiz_published');
+            }
+        });
+
+        static::updated(function (Quiz $quiz): void {
+            if ($quiz->wasChanged('is_published') && $quiz->is_published) {
+                $quiz->recordLifecycleEvent('quiz_published');
+            }
+        });
+    }
+
+    private function recordLifecycleEvent(string $event): void
+    {
+        $creator = $this->creator()->first();
+
+        if (!$creator) {
+            return;
+        }
+
+        ProductEvent::record(
+            $event,
+            $creator,
+            'quiz',
+            $this->id,
+            idempotencyKey: ProductEvent::idempotencyKey(
+                $event,
+                $event === 'quiz_published'
+                    ? [$this->id, $this->updated_at?->format('Y-m-d H:i:s.u') ?? now()->format('Y-m-d H:i:s.u')]
+                    : [$this->id],
+            ),
+        );
+    }
+
     public function isProgressive(): bool
     {
         return $this->type === 'progressive';

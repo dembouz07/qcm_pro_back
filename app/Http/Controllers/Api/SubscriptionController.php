@@ -23,11 +23,18 @@ class SubscriptionController extends Controller
      */
     public function checkout(Request $request, PayTechService $paytech)
     {
+        abort_unless(
+            config('commercial.launch_enabled'),
+            503,
+            'Les paiements en libre-service sont fermés pendant la phase pilote.',
+        );
+
         $user = $request->user();
         $availablePlans = array_keys($user->availableSubscriptionPlans());
 
         $data = $request->validate([
             'plan' => ['required', 'string', Rule::in($availablePlans)],
+            'billing_period' => ['sometimes', 'string', Rule::in(['monthly', 'annual'])],
         ]);
 
         try {
@@ -39,14 +46,23 @@ class SubscriptionController extends Controller
 
             $plan = $data['plan'];
             $planDetails = User::subscriptionPlans()[$plan];
-            $amount = (int) $planDetails['price'];
+            $billingPeriod = $data['billing_period'] ?? 'monthly';
+
+            if ($billingPeriod === 'annual' && empty($planDetails['annual_price'])) {
+                return response()->json([
+                    'message' => "Cette formule n'est pas disponible en paiement annuel.",
+                ], 422);
+            }
+
+            $amount = (int) ($billingPeriod === 'annual' ? $planDetails['annual_price'] : $planDetails['price']);
             $frontend = rtrim((string) config('services.paytech.frontend_url'), '/');
             $subscriptionPath = $user->role === 'enterprise' ? '/entreprise/abonnement' : '/admin/subscription';
-            $refCommand = 'QCMPRO_' . strtoupper($plan) . '_' . $user->id . '_' . time();
+            $refCommand = 'QCMPRO_' . strtoupper($plan) . '_' . strtoupper($billingPeriod) . '_' . $user->id . '_' . time();
+            $periodLabel = $billingPeriod === 'annual' ? '1 an' : '1 mois';
 
             $payment = $paytech->requestPayment([
                 'item_name' => 'Check Performance - Formule ' . $planDetails['name'],
-                'command_name' => "Formule {$planDetails['name']} (1 mois) - {$user->email}",
+                'command_name' => "Formule {$planDetails['name']} ({$periodLabel}) - {$user->email}",
                 'amount' => $amount,
                 'ref_command' => $refCommand,
                 'success_url' => $frontend . $subscriptionPath . '?paid=1',
@@ -56,6 +72,7 @@ class SubscriptionController extends Controller
                     'user_id' => $user->id,
                     'ref_command' => $refCommand,
                     'plan' => $plan,
+                    'billing_period' => $billingPeriod,
                 ],
             ]);
 
@@ -72,7 +89,7 @@ class SubscriptionController extends Controller
                 'amount' => $amount,
                 'currency' => 'XOF',
                 'status' => 'pending',
-                'meta' => ['ref_command' => $refCommand, 'plan' => $plan],
+                'meta' => ['ref_command' => $refCommand, 'plan' => $plan, 'billing_period' => $billingPeriod],
             ]);
 
             return response()->json(['url' => $payment['url']]);
@@ -162,6 +179,7 @@ class SubscriptionController extends Controller
 
         $paymentMeta = (array) $payment->meta;
         $plan = (string) ($paymentMeta['plan'] ?? '');
+        $billingPeriod = (string) ($paymentMeta['billing_period'] ?? 'monthly');
 
         $payment->update([
             'status' => 'completed',
@@ -185,7 +203,9 @@ class SubscriptionController extends Controller
             $user->update([
                 'subscription_plan' => $plan,
                 'subscription_status' => 'active',
-                'subscribed_until' => $base->copy()->addMonth(),
+                'subscribed_until' => $billingPeriod === 'annual'
+                    ? $base->copy()->addYear()
+                    : $base->copy()->addMonth(),
             ]);
         }
     }

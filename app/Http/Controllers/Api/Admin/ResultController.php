@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\ProductEvent;
 use App\Models\Submission;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -12,6 +13,12 @@ class ResultController extends Controller
     public function index(Request $request)
     {
         $adminId = $request->user()->id;
+
+        ProductEvent::record(
+            'report_viewed',
+            $request->user(),
+            idempotencyKey: ProductEvent::idempotencyKey('report_viewed', [$adminId, now()->toDateString()]),
+        );
 
         $query = Submission::query()
             ->whereHas('quiz', fn ($q) => $q->where('created_by', $adminId))

@@ -1,6 +1,8 @@
 <?php
 
 return [
+    'version' => '1.0',
+    'published_at' => '2026-08-06',
     'pillars' => [
         [
             'key' => 'confidence',

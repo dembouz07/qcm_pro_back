@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Quiz;
+use App\Models\QuizAttempt;
 use App\Models\SchoolClass;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -185,7 +186,26 @@ class QuizCreationTest extends TestCase
             'prenom' => 'Awa',
         ])->assertOk()
             ->assertJsonPath('require_stage_pass', false)
+            ->assertJsonStructure(['attempt_id', 'result_access_token'])
             ->assertJsonCount(2, 'stages');
+
+        $this->postJson("/api/admin/quizzes/{$quiz->id}/close")->assertOk();
+        $this->assertTrue(
+            QuizAttempt::findOrFail($started->json('attempt_id'))->matures_at->lte(now()->addSecond()),
+        );
+        $this->postJson("/api/admin/quizzes/{$quiz->id}/reopen")->assertOk();
+        $this->assertTrue(
+            QuizAttempt::findOrFail($started->json('attempt_id'))->matures_at->gte(now()->addHours(23)),
+        );
+
+        $this->postJson("/api/admin/quizzes/{$quiz->id}/archive")->assertOk();
+        $this->assertTrue(
+            QuizAttempt::findOrFail($started->json('attempt_id'))->matures_at->lte(now()->addSecond()),
+        );
+        $this->postJson("/api/admin/quizzes/{$quiz->id}/unarchive")->assertOk();
+        $this->assertTrue(
+            QuizAttempt::findOrFail($started->json('attempt_id'))->matures_at->gte(now()->addHours(23)),
+        );
 
         $stages = $started->json('stages');
         $firstQuestion = $stages[0]['questions'][0];
@@ -194,6 +214,8 @@ class QuizCreationTest extends TestCase
         $secondYes = collect($secondQuestion['choices'])->firstWhere('is_oui', true);
 
         $payload = [
+            'attempt_id' => $started->json('attempt_id'),
+            'result_access_token' => $started->json('result_access_token'),
             'nom' => 'Diallo',
             'prenom' => 'Awa',
             'answers' => [
@@ -206,6 +228,41 @@ class QuizCreationTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('stade_atteint', 2);
 
+        $this->postJson('/api/public/my-results', [
+            'nom' => 'Diallo',
+            'prenom' => 'Awa',
+        ])->assertUnprocessable();
+
+        $this->postJson('/api/public/my-results', [
+            'access_token' => $started->json('result_access_token'),
+        ])->assertOk()
+            ->assertJsonCount(1, 'data');
+
+        $this->assertDatabaseHas('quiz_attempts', [
+            'id' => $started->json('attempt_id'),
+            'quiz_id' => $quiz->id,
+            'result_access_token_hash' => hash('sha256', $started->json('result_access_token')),
+            'submission_mode' => 'manual',
+            'is_valid_completion' => true,
+        ]);
+
+        $this->postJson("/api/public/quiz/{$quiz->access_token}/submit", $payload)
+            ->assertOk()
+            ->assertJsonPath('already_submitted', true)
+            ->assertJsonPath('stade_atteint', 2);
+
+        QuizAttempt::findOrFail($started->json('attempt_id'))->update([
+            'result_access_expires_at' => now()->subSecond(),
+        ]);
+
+        $this->postJson('/api/public/my-results', [
+            'access_token' => $started->json('result_access_token'),
+        ])->assertNotFound();
+
+        $this->postJson("/api/public/quiz/{$quiz->access_token}/submit", $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('attempt_id');
+
         $this->assertDatabaseHas('submissions', [
             'quiz_id' => $quiz->id,
             'participant_nom' => 'Diallo',
@@ -215,11 +272,39 @@ class QuizCreationTest extends TestCase
         ]);
 
         $quiz->update(['require_stage_pass' => true]);
+        $secondStarted = $this->postJson("/api/public/quiz/{$quiz->access_token}/start", [
+            'nom' => 'Ndiaye',
+            'prenom' => 'Awa',
+        ])->assertOk();
+
+        $payload['attempt_id'] = $secondStarted->json('attempt_id');
+        $payload['result_access_token'] = $secondStarted->json('result_access_token');
         $payload['nom'] = 'Ndiaye';
+        $payload['answers'] = [
+            ['question_id' => $firstQuestion['id'], 'choice_id' => $firstYes['id']],
+        ];
 
         $this->postJson("/api/public/quiz/{$quiz->access_token}/submit", $payload)
             ->assertCreated()
             ->assertJsonPath('stade_atteint', 1);
+
+        $invalidStarted = $this->postJson("/api/public/quiz/{$quiz->access_token}/start", [
+            'nom' => 'Fall',
+            'prenom' => 'Aminata',
+        ])->assertOk();
+
+        $this->postJson("/api/public/quiz/{$quiz->access_token}/submit", [
+            'attempt_id' => $invalidStarted->json('attempt_id'),
+            'result_access_token' => $invalidStarted->json('result_access_token'),
+            'nom' => 'Fall',
+            'prenom' => 'Aminata',
+            'answers' => [],
+        ])->assertUnprocessable();
+
+        $this->assertDatabaseHas('quiz_attempts', [
+            'id' => $invalidStarted->json('attempt_id'),
+            'submitted_at' => null,
+        ]);
     }
 
     public function test_quiz_cannot_use_another_admin_class(): void

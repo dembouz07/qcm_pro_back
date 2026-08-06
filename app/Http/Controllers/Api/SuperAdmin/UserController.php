@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\SuperAdmin;
 
 use App\Http\Controllers\Controller;
+use App\Models\ProductEvent;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -53,6 +54,7 @@ class UserController extends Controller
 
         $user->update(['is_blocked' => true]);
         $user->tokens()->delete();
+        DB::table('sessions')->where('user_id', $user->id)->delete();
 
         return response()->json([
             'message' => 'Utilisateur bloqué.',
@@ -86,6 +88,15 @@ class UserController extends Controller
 
         DB::transaction(function () use ($user) {
             $user->tokens()->delete();
+            DB::table('sessions')->where('user_id', $user->id)->delete();
+            DB::table('password_reset_tokens')->where('email', $user->email)->delete();
+            try {
+                ProductEvent::query()
+                    ->where('actor_key', ProductEvent::actorKey($user->id))
+                    ->delete();
+            } catch (\Throwable) {
+                // La suppression du compte reste prioritaire si la télémétrie est indisponible.
+            }
             $user->delete();
         });
 

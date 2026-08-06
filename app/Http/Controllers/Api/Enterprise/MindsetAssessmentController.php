@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Enterprise;
 use App\Models\Company;
 use App\Models\CompanyEmployee;
 use App\Models\MindsetAssessment;
+use App\Models\ProductEvent;
 use App\Support\MindsetTemplate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -54,7 +55,7 @@ class MindsetAssessmentController extends EnterpriseController
 
         return response()->json([
             'assessment' => $assessment,
-            'template' => MindsetTemplate::template(),
+            'template' => $assessment->methodology_snapshot ?: MindsetTemplate::template(),
             'comparison' => $this->comparisonFor($assessment),
         ]);
     }
@@ -69,7 +70,9 @@ class MindsetAssessmentController extends EnterpriseController
 
     private function persist(Request $request, Company $company, ?MindsetAssessment $assessment = null)
     {
-        $data = $this->validated($request);
+        $isNewAssessment = $assessment === null;
+        $methodology = $assessment?->methodology_snapshot ?: MindsetTemplate::template();
+        $data = $this->validated($request, $methodology);
         $employee = $company->employees()->find($data['company_employee_id']);
 
         if (!$employee) {
@@ -78,13 +81,13 @@ class MindsetAssessmentController extends EnterpriseController
             ]);
         }
 
-        if ($data['type'] === 'follow_up' && !$this->hasInitialAssessment($employee, $assessment)) {
+        if ($data['type'] === 'follow_up' && !$this->hasInitialAssessment($employee, $assessment, $data['assessed_at'])) {
             throw ValidationException::withMessages([
-                'type' => 'Un diagnostic initial T0 est requis avant de créer le suivi T+6 mois.',
+                'type' => 'Un diagnostic initial T0 daté avant cet entretien est requis pour créer le suivi.',
             ]);
         }
 
-        [$responses, $totalScore, $level] = $this->normalizeResponses($data['responses']);
+        [$responses, $totalScore, $level] = $this->normalizeResponses($data['responses'], $methodology);
         $actionItems = collect($data['action_items'] ?? [])
             ->map(fn ($item) => trim((string) $item))
             ->filter()
@@ -104,6 +107,13 @@ class MindsetAssessmentController extends EnterpriseController
                 'next_review_at' => $data['next_review_at'] ?? null,
             ];
 
+            if (!$assessment) {
+                $methodology = MindsetTemplate::template();
+                $attributes['methodology_version'] = $methodology['version'];
+                $attributes['methodology_hash'] = hash('sha256', json_encode($methodology, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+                $attributes['methodology_snapshot'] = $methodology;
+            }
+
             if ($assessment) {
                 $assessment->update($attributes);
                 $assessment->responses()->delete();
@@ -118,20 +128,32 @@ class MindsetAssessmentController extends EnterpriseController
 
         $assessment->load(['employee', 'responses']);
 
+        if ($isNewAssessment) {
+            ProductEvent::record(
+                'assessment_submitted',
+                $request->user(),
+                'assessment',
+                $assessment->id,
+                ['assessment_type' => $assessment->type],
+                ProductEvent::idempotencyKey('assessment_submitted', [$assessment->id]),
+            );
+        }
+
         return response()->json($assessment, $request->isMethod('post') ? 201 : 200);
     }
 
-    private function hasInitialAssessment(CompanyEmployee $employee, ?MindsetAssessment $currentAssessment): bool
+    private function hasInitialAssessment(CompanyEmployee $employee, ?MindsetAssessment $currentAssessment, string $followUpDate): bool
     {
         return $employee->assessments()
             ->where('type', 'initial')
+            ->whereDate('assessed_at', '<=', $followUpDate)
             ->when($currentAssessment, fn ($query) => $query->where('id', '!=', $currentAssessment->id))
             ->exists();
     }
 
-    private function normalizeResponses(array $input): array
+    private function normalizeResponses(array $input, array $methodology): array
     {
-        $questions = MindsetTemplate::questions();
+        $questions = MindsetTemplate::questions($methodology);
         $responses = [];
 
         foreach ($input as $response) {
@@ -167,7 +189,7 @@ class MindsetAssessmentController extends EnterpriseController
         $records = array_values($responses);
         $totalScore = array_sum(array_column($records, 'score'));
 
-        return [$records, $totalScore, MindsetTemplate::interpretationFor($totalScore)];
+        return [$records, $totalScore, MindsetTemplate::interpretationFor($totalScore, $methodology)];
     }
 
     private function assessmentForCompany(Company $company, MindsetAssessment $assessment): MindsetAssessment
@@ -184,8 +206,9 @@ class MindsetAssessmentController extends EnterpriseController
         $baseline = $assessment->employee
             ->assessments()
             ->where('type', 'initial')
+            ->where('methodology_version', $assessment->methodology_version)
             ->whereDate('assessed_at', '<=', $assessment->assessed_at)
-            ->orderBy('assessed_at')
+            ->orderByDesc('assessed_at')
             ->first();
 
         if (!$baseline) {
@@ -200,6 +223,7 @@ class MindsetAssessmentController extends EnterpriseController
         return [
             'baseline' => $this->summaryFor($baseline),
             'follow_up' => $this->summaryFor($assessment),
+            'elapsed_days' => $baseline->assessed_at->diffInDays($assessment->assessed_at),
             'delta' => $assessment->total_score - $baseline->total_score,
             'pillars' => collect($currentScores)->map(function (array $pillar) use ($baselineByKey) {
                 $baselinePillar = $baselineByKey[$pillar['key']];
@@ -220,6 +244,7 @@ class MindsetAssessmentController extends EnterpriseController
             'assessed_at' => $assessment->assessed_at?->toDateString(),
             'total_score' => $assessment->total_score,
             'level' => $assessment->level,
+            'methodology_version' => $assessment->methodology_version,
         ];
     }
 
@@ -241,13 +266,13 @@ class MindsetAssessmentController extends EnterpriseController
         return $pillars;
     }
 
-    private function validated(Request $request): array
+    private function validated(Request $request, array $methodology): array
     {
         return $request->validate([
             'company_employee_id' => ['required', 'integer'],
             'type' => ['required', Rule::in(['initial', 'follow_up'])],
             'assessed_at' => ['required', 'date'],
-            'responses' => ['required', 'array', 'size:' . count(MindsetTemplate::questions())],
+            'responses' => ['required', 'array', 'size:' . count(MindsetTemplate::questions($methodology))],
             'responses.*.question_key' => ['required', 'string', 'max:80'],
             'responses.*.score' => ['required', 'integer', 'between:1,5'],
             'responses.*.observation' => ['nullable', 'string'],

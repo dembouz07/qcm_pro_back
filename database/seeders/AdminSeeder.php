@@ -11,11 +11,20 @@ class AdminSeeder extends Seeder
 {
     public function run(): void
     {
+        if (!app()->environment(['local', 'testing'])) {
+            throw new \RuntimeException('AdminSeeder est réservé aux environnements local et testing.');
+        }
+
+        $demoPassword = (string) env('DEMO_SEED_PASSWORD', '');
+        if (mb_strlen($demoPassword) < 12) {
+            throw new \RuntimeException('Définissez DEMO_SEED_PASSWORD avec au moins 12 caractères avant de lancer AdminSeeder.');
+        }
+
         $admin = User::updateOrCreate(
             ['email' => 'admin@example.com'],
             [
                 'name' => 'Administrateur',
-                'password' => Hash::make('password'),
+                'password' => Hash::make($demoPassword),
                 'role' => 'admin',
                 'school_class_id' => null,
             ]
@@ -48,7 +57,7 @@ class AdminSeeder extends Seeder
             ['email' => 'eleve@example.com'],
             [
                 'name' => 'Élève Démo',
-                'password' => Hash::make('password'),
+                'password' => Hash::make($demoPassword),
                 'role' => 'student',
                 'school_class_id' => $class->id,
             ]

@@ -13,6 +13,7 @@ class SubscriptionOffersTest extends TestCase
 
         $this->assertSame('Formateur', $plan['name']);
         $this->assertSame(5000, $plan['price']);
+        $this->assertSame(50000, $plan['annual_price']);
         $this->assertEqualsCanonicalizing([
             'quiz_manual',
             'quiz_import',
@@ -27,13 +28,28 @@ class SubscriptionOffersTest extends TestCase
     {
         $plan = User::subscriptionPlans()[User::PLAN_ENTERPRISE];
 
-        $this->assertSame('Entreprise', $plan['name']);
+        $this->assertSame('Entreprise Essentiel', $plan['name']);
         $this->assertSame(25000, $plan['price']);
+        $this->assertSame(25, $plan['employee_limit']);
         $this->assertEqualsCanonicalizing([
             'company_employees',
             'mindset_assessments',
             'mindset_progress',
         ], $plan['features']);
+        $this->assertEmpty(array_intersect($plan['features'], User::PLAN_FEATURES[User::PLAN_PREMIUM]));
+    }
+
+    public function test_enterprise_team_offer_extends_capacity_without_mixing_qcm_features(): void
+    {
+        $plan = User::subscriptionPlans()[User::PLAN_ENTERPRISE_TEAM];
+
+        $this->assertSame('Entreprise Équipe', $plan['name']);
+        $this->assertSame(75000, $plan['price']);
+        $this->assertSame(100, $plan['employee_limit']);
+        $this->assertEqualsCanonicalizing(
+            User::PLAN_FEATURES[User::PLAN_ENTERPRISE],
+            $plan['features'],
+        );
         $this->assertEmpty(array_intersect($plan['features'], User::PLAN_FEATURES[User::PLAN_PREMIUM]));
     }
 
@@ -45,6 +61,9 @@ class SubscriptionOffersTest extends TestCase
 
         $this->assertSame([], $student->availableSubscriptionPlans());
         $this->assertSame([User::PLAN_PREMIUM], array_keys($trainer->availableSubscriptionPlans()));
-        $this->assertSame([User::PLAN_ENTERPRISE], array_keys($enterprise->availableSubscriptionPlans()));
+        $this->assertSame(
+            [User::PLAN_ENTERPRISE, User::PLAN_ENTERPRISE_TEAM],
+            array_keys($enterprise->availableSubscriptionPlans()),
+        );
     }
 }

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Quiz;
+use App\Models\QuizAttempt;
 use App\Models\User;
 use App\Services\QuizCreator;
 use App\Services\QuestionStatisticsCalculator;
@@ -72,6 +73,7 @@ class QuizController extends Controller
     {
         $this->authorizeOwner($request, $quiz);
         $quiz->update(['archived_at' => now()]);
+        $this->closeAttemptMeasurementWindows($quiz);
         return response()->json(['message' => 'QCM archivé.', 'archived_at' => $quiz->archived_at]);
     }
 
@@ -79,6 +81,7 @@ class QuizController extends Controller
     {
         $this->authorizeOwner($request, $quiz);
         $quiz->update(['archived_at' => null]);
+        $this->reopenAttemptMeasurementWindows($quiz);
         return response()->json(['message' => 'QCM désarchivé.']);
     }
 
@@ -86,6 +89,7 @@ class QuizController extends Controller
     {
         $this->authorizeOwner($request, $quiz);
         $quiz->update(['closed_at' => now()]);
+        $this->closeAttemptMeasurementWindows($quiz);
 
         return response()->json([
             'message' => 'Le QCM est maintenant fermé.',
@@ -97,11 +101,45 @@ class QuizController extends Controller
     {
         $this->authorizeOwner($request, $quiz);
         $quiz->update(['closed_at' => null]);
+        $this->reopenAttemptMeasurementWindows($quiz);
 
         return response()->json([
             'message' => 'Le QCM est de nouveau ouvert.',
             'closed_at' => null,
         ]);
+    }
+
+    private function closeAttemptMeasurementWindows(Quiz $quiz): void
+    {
+        $closedAt = now();
+
+        QuizAttempt::query()
+            ->where('quiz_id', $quiz->id)
+            ->where('matures_at', '>', $closedAt)
+            ->update([
+                'matures_at' => $closedAt,
+                'updated_at' => $closedAt,
+            ]);
+    }
+
+    private function reopenAttemptMeasurementWindows(Quiz $quiz): void
+    {
+        if (!$quiz->isOpen()) {
+            return;
+        }
+
+        $reopenedAt = now();
+        $maturesAt = $quiz->ends_at
+            ? $quiz->ends_at->copy()->addSeconds(60)
+            : $reopenedAt->copy()->addHours(24);
+
+        QuizAttempt::query()
+            ->where('quiz_id', $quiz->id)
+            ->whereNull('submitted_at')
+            ->update([
+                'matures_at' => $maturesAt,
+                'updated_at' => $reopenedAt,
+            ]);
     }
 
     /**

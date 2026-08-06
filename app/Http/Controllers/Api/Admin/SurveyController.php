@@ -94,12 +94,12 @@ class SurveyController extends Controller
     {
         return $request->validate([
             'title' => ['required', 'string', 'max:190'],
-            'description' => ['nullable', 'string'],
-            'questions' => ['required', 'array', 'min:1'],
-            'questions.*.body' => ['required', 'string'],
+            'description' => ['nullable', 'string', 'max:5000'],
+            'questions' => ['required', 'array', 'min:1', 'max:100'],
+            'questions.*.body' => ['required', 'string', 'max:1000'],
             'questions.*.type' => ['required', Rule::in(['text', 'single', 'multiple'])],
-            'questions.*.options' => ['nullable', 'array'],
-            'questions.*.options.*' => ['string'],
+            'questions.*.options' => ['nullable', 'array', 'max:20'],
+            'questions.*.options.*' => ['string', 'max:300'],
         ]);
     }
 }

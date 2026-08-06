@@ -39,6 +39,7 @@ class User extends Authenticatable
     public const PLAN_ESSENTIAL = 'essential';
     public const PLAN_PREMIUM = 'premium';
     public const PLAN_ENTERPRISE = 'enterprise';
+    public const PLAN_ENTERPRISE_TEAM = 'enterprise_team';
 
     public const PLAN_FEATURES = [
         self::PLAN_FREE => [
@@ -61,6 +62,11 @@ class User extends Authenticatable
             'wrong_question_stats',
         ],
         self::PLAN_ENTERPRISE => [
+            'company_employees',
+            'mindset_assessments',
+            'mindset_progress',
+        ],
+        self::PLAN_ENTERPRISE_TEAM => [
             'company_employees',
             'mindset_assessments',
             'mindset_progress',
@@ -176,20 +182,29 @@ class User extends Authenticatable
                 'id' => self::PLAN_PREMIUM,
                 'name' => 'Formateur',
                 'price' => 5000,
+                'annual_price' => 50000,
                 'features' => self::PLAN_FEATURES[self::PLAN_PREMIUM],
             ],
             self::PLAN_ENTERPRISE => [
                 'id' => self::PLAN_ENTERPRISE,
-                'name' => 'Entreprise',
+                'name' => 'Entreprise Essentiel',
                 'price' => 25000,
+                'employee_limit' => 25,
                 'features' => self::PLAN_FEATURES[self::PLAN_ENTERPRISE],
+            ],
+            self::PLAN_ENTERPRISE_TEAM => [
+                'id' => self::PLAN_ENTERPRISE_TEAM,
+                'name' => 'Entreprise Équipe',
+                'price' => 75000,
+                'employee_limit' => 100,
+                'features' => self::PLAN_FEATURES[self::PLAN_ENTERPRISE_TEAM],
             ],
         ];
     }
 
     public static function paidPlanIds(): array
     {
-        return [self::PLAN_ESSENTIAL, self::PLAN_PREMIUM, self::PLAN_ENTERPRISE];
+        return [self::PLAN_ESSENTIAL, self::PLAN_PREMIUM, self::PLAN_ENTERPRISE, self::PLAN_ENTERPRISE_TEAM];
     }
 
     public function availableSubscriptionPlans(): array
@@ -197,10 +212,20 @@ class User extends Authenticatable
         $plans = self::subscriptionPlans();
 
         return match ($this->role) {
-            'enterprise' => [self::PLAN_ENTERPRISE => $plans[self::PLAN_ENTERPRISE]],
+            'enterprise' => [
+                self::PLAN_ENTERPRISE => $plans[self::PLAN_ENTERPRISE],
+                self::PLAN_ENTERPRISE_TEAM => $plans[self::PLAN_ENTERPRISE_TEAM],
+            ],
             'admin' => [self::PLAN_PREMIUM => $plans[self::PLAN_PREMIUM]],
             default => [],
         };
+    }
+
+    public function employeeLimit(): ?int
+    {
+        $plan = self::subscriptionPlans()[$this->effectiveSubscriptionPlan()] ?? null;
+
+        return isset($plan['employee_limit']) ? (int) $plan['employee_limit'] : null;
     }
 
     public function payments()

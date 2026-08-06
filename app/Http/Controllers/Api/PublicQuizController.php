@@ -4,11 +4,15 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Choice;
+use App\Models\ProductEvent;
 use App\Models\Quiz;
+use App\Models\QuizAttempt;
 use App\Models\Submission;
 use App\Services\ProgressiveStageResultCalculator;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class PublicQuizController extends Controller
@@ -67,19 +71,13 @@ class PublicQuizController extends Controller
         }
 
         $data = $request->validate([
+            'attempt_id' => ['nullable', 'uuid'],
             'nom' => ['required', 'string', 'max:100'],
             'prenom' => ['required', 'string', 'max:100'],
             'referentiel' => [$quiz->isProgressive() ? 'nullable' : 'required', 'string', 'max:200'],
         ]);
 
-        // Vérifier si cette personne a déjà soumis
-        $alreadySubmitted = $this->hasAlreadySubmitted($quiz, $data);
-
-        if ($alreadySubmitted) {
-            return response()->json([
-                'message' => 'Vous avez déjà passé ce QCM.',
-            ], 409);
-        }
+        [$attemptId, $resultAccessToken] = $this->recordAttemptStart($quiz, $data['attempt_id'] ?? null);
 
         $quiz->load('questions.choices');
 
@@ -93,6 +91,8 @@ class PublicQuizController extends Controller
                 'require_stage_pass' => $quiz->require_stage_pass,
                 'starts_at' => null,
                 'ends_at' => null,
+                'attempt_id' => $attemptId,
+                'result_access_token' => $resultAccessToken,
                 'stages' => $this->buildStages($quiz),
             ]);
         }
@@ -104,6 +104,8 @@ class PublicQuizController extends Controller
             'type' => 'standard',
             'starts_at' => $quiz->starts_at,
             'ends_at' => $quiz->ends_at,
+            'attempt_id' => $attemptId,
+            'result_access_token' => $resultAccessToken,
             'questions' => $quiz->questions->map(fn ($question) => [
                 'id' => $question->id,
                 'body' => $question->body,
@@ -142,27 +144,26 @@ class PublicQuizController extends Controller
     }
 
     /**
-     * Permet à un participant public de retrouver toutes ses notes
-     * (sur les différents tests) à partir de son identité.
+     * Retourne un résultat public avec son code secret temporaire.
      */
     public function myResults(Request $request)
     {
         $data = $request->validate([
-            'nom' => ['required', 'string', 'max:100'],
-            'prenom' => ['required', 'string', 'max:100'],
-            'referentiel' => ['nullable', 'string', 'max:200'],
+            'access_token' => ['required', 'alpha_num', 'size:64'],
         ]);
 
-        $query = Submission::query()
-            ->with('quiz')
-            ->where('participant_nom', $data['nom'])
-            ->where('participant_prenom', $data['prenom']);
+        $attempt = QuizAttempt::query()
+            ->where('result_access_token_hash', hash('sha256', $data['access_token']))
+            ->where('result_access_expires_at', '>=', now())
+            ->whereNotNull('submission_id')
+            ->with('submission.quiz')
+            ->first();
 
-        if (!empty($data['referentiel'])) {
-            $query->where('participant_referentiel', $data['referentiel']);
+        if (!$attempt?->submission) {
+            return response()->json(['message' => 'Résultat introuvable ou code d’accès invalide.'], 404);
         }
 
-        $submissions = $query->latest('submitted_at')->get()->map(fn ($s) => [
+        $submissions = collect([$attempt->submission])->map(fn ($s) => [
             'id' => $s->id,
             'quiz_title' => $s->quiz?->title,
             'quiz_type' => $s->quiz?->type,
@@ -189,6 +190,31 @@ class PublicQuizController extends Controller
             return response()->json(['message' => 'QCM introuvable.'], 404);
         }
 
+        $isAutoSubmit = $request->boolean('auto_submit', false);
+
+        $data = $request->validate([
+            'attempt_id' => ['required', 'uuid'],
+            'result_access_token' => ['required', 'alpha_num', 'size:64'],
+            'nom' => ['required', 'string', 'max:100'],
+            'prenom' => ['required', 'string', 'max:100'],
+            'referentiel' => [$quiz->isProgressive() ? 'nullable' : 'required', 'string', 'max:200'],
+            'auto_submit' => ['sometimes', 'boolean'],
+            'answers' => ['nullable', 'array', 'max:250'],
+            'answers.*' => ['array:question_id,choice_id'],
+            'answers.*.question_id' => ['required', 'integer'],
+            'answers.*.choice_id' => ['nullable', 'integer'],
+        ]);
+
+        $attempt = $this->ensureAttemptMatchesQuiz(
+            $quiz,
+            $data['attempt_id'],
+            $data['result_access_token'],
+        );
+
+        if ($attempt->submitted_at) {
+            return $this->submittedAttemptResponse($quiz, $attempt);
+        }
+
         if ($quiz->isLocked()) {
             return response()->json([
                 'message' => "Ce QCM n'est pas encore ouvert.",
@@ -196,30 +222,10 @@ class PublicQuizController extends Controller
             ], 423);
         }
 
-        $isAutoSubmit = $request->boolean('auto_submit', false);
         $gracePeriodSeconds = $isAutoSubmit ? 60 : 0;
 
         if ($quiz->isClosed($gracePeriodSeconds)) {
             return response()->json(['message' => 'Ce QCM est fermé.'], 403);
-        }
-
-        $data = $request->validate([
-            'nom' => ['required', 'string', 'max:100'],
-            'prenom' => ['required', 'string', 'max:100'],
-            'referentiel' => [$quiz->isProgressive() ? 'nullable' : 'required', 'string', 'max:200'],
-            'auto_submit' => ['sometimes', 'boolean'],
-            'answers' => ['nullable', 'array'],
-            'answers.*.question_id' => ['required', 'integer'],
-            'answers.*.choice_id' => ['nullable', 'integer'],
-        ]);
-
-        // Vérifier doublon
-        $alreadySubmitted = $this->hasAlreadySubmitted($quiz, $data);
-
-        if ($alreadySubmitted) {
-            return response()->json([
-                'message' => 'Vous avez déjà passé ce QCM.',
-            ], 409);
         }
 
         $quiz->load('questions.choices');
@@ -229,11 +235,25 @@ class PublicQuizController extends Controller
         }
 
         $questions = $quiz->questions->keyBy('id');
-        $submittedAnswers = collect($data['answers'] ?? [])
+        $rawAnswers = collect($data['answers'] ?? [])
             ->filter(fn ($answer) => isset($answer['question_id']))
-            ->keyBy('question_id');
+            ->values();
+        $submittedAnswers = $rawAnswers->keyBy('question_id');
+        $questionIds = $questions->keys()->map(fn ($id) => (int) $id);
+        $submittedQuestionIds = $submittedAnswers->keys()->map(fn ($id) => (int) $id);
 
-        if (!$isAutoSubmit && $submittedAnswers->count() !== $questions->count()) {
+        if ($rawAnswers->count() !== $submittedAnswers->count()
+            || $submittedQuestionIds->diff($questionIds)->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'answers' => 'Les réponses contiennent une question inconnue ou dupliquée.',
+            ]);
+        }
+
+        $isComplete = $submittedAnswers->count() === $questions->count()
+            && $questionIds->diff($submittedQuestionIds)->isEmpty()
+            && $submittedAnswers->every(fn ($answer) => !empty($answer['choice_id']));
+
+        if (!$isAutoSubmit && !$isComplete) {
             throw ValidationException::withMessages([
                 'answers' => 'Vous devez répondre à toutes les questions.',
             ]);
@@ -242,7 +262,9 @@ class PublicQuizController extends Controller
         $totalPoints = (float) $quiz->questions->sum('points');
         $score = 0.0;
 
-        $submission = DB::transaction(function () use ($quiz, $data, $questions, $submittedAnswers, $totalPoints, &$score) {
+        $submission = DB::transaction(function () use ($quiz, $data, $questions, $submittedAnswers, $totalPoints, $isAutoSubmit, $isComplete, &$score) {
+            $this->lockAttemptForSubmission($quiz, $data['attempt_id']);
+
             $submission = Submission::create([
                 'user_id' => null,
                 'quiz_id' => $quiz->id,
@@ -293,6 +315,15 @@ class PublicQuizController extends Controller
                 'note_sur_20' => $noteSur20,
             ]);
 
+            $this->markAttemptSubmitted(
+                $quiz,
+                $data['attempt_id'],
+                $isAutoSubmit ? 'automatic' : 'manual',
+                $submission,
+                $isComplete,
+                $isComplete ? null : 'automatic_incomplete',
+            );
+
             return $submission->fresh()->load('answers.question', 'answers.choice');
         });
 
@@ -309,6 +340,31 @@ class PublicQuizController extends Controller
      * et le stade atteint (le seuil de « Oui » bloque le passage au stade suivant).
      */
     private function submitProgressive(
+        Quiz $quiz,
+        array $data,
+        ProgressiveStageResultCalculator $stageCalculator,
+    )
+    {
+        $rawAnswers = collect($data['answers'] ?? [])
+            ->filter(fn ($answer) => isset($answer['question_id']))
+            ->values();
+        $submittedAnswers = $rawAnswers->keyBy('question_id');
+
+        $this->validateProgressiveAnswerPath(
+            $quiz,
+            $quiz->questions->keyBy('id'),
+            $rawAnswers,
+            $submittedAnswers,
+        );
+
+        return DB::transaction(function () use ($quiz, $data, $stageCalculator) {
+            $this->lockAttemptForSubmission($quiz, $data['attempt_id']);
+
+            return $this->persistProgressive($quiz, $data, $stageCalculator);
+        });
+    }
+
+    private function persistProgressive(
         Quiz $quiz,
         array $data,
         ProgressiveStageResultCalculator $stageCalculator,
@@ -348,6 +404,12 @@ class PublicQuizController extends Controller
                     $choice = Choice::where('id', $answer['choice_id'])
                         ->where('question_id', $question->id)
                         ->first();
+
+                    if (!$choice) {
+                        throw ValidationException::withMessages([
+                            'answers' => 'Un choix envoyé ne correspond pas à sa question.',
+                        ]);
+                    }
                 }
 
                 $isOui = $choice ? (bool) $choice->is_correct : false;
@@ -393,6 +455,8 @@ class PublicQuizController extends Controller
             'stage_scores' => $stageScores,
         ]);
 
+        $this->markAttemptSubmitted($quiz, $data['attempt_id'], 'manual', $submission, true);
+
         return response()->json([
             'message' => 'Diagnostic terminé.',
             'submission' => $submission->fresh(),
@@ -401,17 +465,234 @@ class PublicQuizController extends Controller
         ], 201);
     }
 
-    private function hasAlreadySubmitted(Quiz $quiz, array $participant): bool
-    {
-        $query = Submission::query()
-            ->where('quiz_id', $quiz->id)
-            ->where('participant_nom', $participant['nom'])
-            ->where('participant_prenom', $participant['prenom']);
+    private function validateProgressiveAnswerPath(
+        Quiz $quiz,
+        Collection $questions,
+        Collection $rawAnswers,
+        Collection $submittedAnswers,
+    ): void {
+        $questionIds = $questions->keys()->map(fn ($id) => (int) $id);
+        $submittedQuestionIds = $submittedAnswers->keys()->map(fn ($id) => (int) $id);
 
-        if (!$quiz->isProgressive()) {
-            $query->where('participant_referentiel', $participant['referentiel']);
+        if ($rawAnswers->isEmpty()
+            || $rawAnswers->count() !== $submittedAnswers->count()
+            || $submittedQuestionIds->diff($questionIds)->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'answers' => 'Le parcours contient une question inconnue, dupliquée ou aucune réponse.',
+            ]);
         }
 
-        return $query->exists();
+        foreach ($submittedAnswers as $questionId => $answer) {
+            $question = $questions->get((int) $questionId);
+            $choiceId = $answer['choice_id'] ?? null;
+
+            if (!$choiceId || !$question->choices->contains(
+                fn ($choice) => (int) $choice->id === (int) $choiceId,
+            )) {
+                throw ValidationException::withMessages([
+                    'answers' => 'Chaque réponse doit correspondre à un choix de sa question.',
+                ]);
+            }
+        }
+
+        $stages = $questions
+            ->groupBy(fn ($question) => (int) $question->stage)
+            ->sortKeys();
+        $lastStage = (int) $stages->keys()->last();
+        $consumedQuestionIds = collect();
+
+        foreach ($stages as $stageNumber => $stageQuestions) {
+            $stageQuestionIds = $stageQuestions->pluck('id')->map(fn ($id) => (int) $id);
+            $answeredStageIds = $stageQuestionIds->filter(
+                fn ($questionId) => $submittedAnswers->has($questionId),
+            );
+
+            if ($answeredStageIds->count() !== $stageQuestionIds->count()) {
+                throw ValidationException::withMessages([
+                    'answers' => 'Chaque stade atteint doit être entièrement renseigné.',
+                ]);
+            }
+
+            $consumedQuestionIds = $consumedQuestionIds->merge($stageQuestionIds);
+            $yesCount = $stageQuestions->filter(function ($question) use ($submittedAnswers) {
+                $choiceId = $submittedAnswers->get($question->id)['choice_id'];
+
+                return $question->choices->contains(
+                    fn ($choice) => (int) $choice->id === (int) $choiceId && (bool) $choice->is_correct,
+                );
+            })->count();
+
+            $mustStop = $quiz->require_stage_pass
+                && $yesCount >= (int) $quiz->stage_threshold;
+            $isLastStage = (int) $stageNumber === $lastStage;
+
+            if ($mustStop || $isLastStage) {
+                if ($submittedQuestionIds->diff($consumedQuestionIds)->isNotEmpty()) {
+                    throw ValidationException::withMessages([
+                        'answers' => 'Des réponses ont été envoyées après le stade de fin du parcours.',
+                    ]);
+                }
+
+                return;
+            }
+        }
+
+        throw ValidationException::withMessages([
+            'answers' => 'Le parcours progressif n’est pas terminé.',
+        ]);
+    }
+
+    private function recordAttemptStart(Quiz $quiz, ?string $attemptId): array
+    {
+        $clientAttemptId = $attemptId;
+        $attemptId ??= (string) Str::uuid();
+        $existing = QuizAttempt::find($attemptId);
+        $resultAccessToken = $existing ? null : Str::random(64);
+
+        if ($clientAttemptId && !$existing) {
+            throw ValidationException::withMessages([
+                'attempt_id' => 'Cette tentative est inconnue.',
+            ]);
+        }
+        if ($existing && (int) $existing->quiz_id !== (int) $quiz->id) {
+            throw ValidationException::withMessages([
+                'attempt_id' => 'Cette tentative ne correspond pas à ce QCM.',
+            ]);
+        }
+
+        if ($existing?->submitted_at) {
+            abort(response()->json([
+                'message' => 'Cette tentative a déjà été envoyée.',
+            ], 409));
+        }
+
+        $startedAt = now();
+        $maturesAt = $quiz->ends_at
+            ? $quiz->ends_at->copy()->addSeconds(60)
+            : $startedAt->copy()->addHours(24);
+
+        QuizAttempt::firstOrCreate(
+            ['id' => $attemptId],
+            [
+                'quiz_id' => $quiz->id,
+                'result_access_token_hash' => $resultAccessToken ? hash('sha256', $resultAccessToken) : null,
+                'result_access_expires_at' => now()->addDays(30),
+                'channel' => 'public_link',
+                'environment' => (string) config('analytics.metric_environment', app()->environment()),
+                'is_internal' => $quiz->creator
+                    ? ProductEvent::isInternalUser($quiz->creator)
+                    : false,
+                'started_at' => $startedAt,
+                'matures_at' => $maturesAt,
+            ],
+        );
+
+        return [$attemptId, $resultAccessToken];
+    }
+
+    private function lockAttemptForSubmission(Quiz $quiz, string $attemptId): QuizAttempt
+    {
+        $attempt = QuizAttempt::query()
+            ->whereKey($attemptId)
+            ->where('quiz_id', $quiz->id)
+            ->lockForUpdate()
+            ->first();
+
+        if (!$attempt) {
+            throw ValidationException::withMessages([
+                'attempt_id' => 'Cette tentative est inconnue.',
+            ]);
+        }
+
+        if ($attempt->submitted_at) {
+            abort(response()->json([
+                'message' => 'Cette tentative a déjà été envoyée.',
+            ], 409));
+        }
+
+        return $attempt;
+    }
+
+    private function markAttemptSubmitted(
+        Quiz $quiz,
+        string $attemptId,
+        string $mode,
+        Submission $submission,
+        bool $isValidCompletion,
+        ?string $invalidReason = null,
+    ): void
+    {
+        $updated = QuizAttempt::query()
+            ->whereKey($attemptId)
+            ->where('quiz_id', $quiz->id)
+            ->whereNull('submitted_at')
+            ->update([
+                'submission_id' => $submission->id,
+                'submitted_at' => now(),
+                'submission_mode' => $mode,
+                'is_valid_completion' => $isValidCompletion,
+                'invalid_reason' => $invalidReason,
+                'updated_at' => now(),
+            ]);
+
+        if ($updated !== 1) {
+            abort(response()->json([
+                'message' => 'Cette tentative a déjà été envoyée.',
+            ], 409));
+        }
+    }
+
+    private function ensureAttemptMatchesQuiz(
+        Quiz $quiz,
+        string $attemptId,
+        string $resultAccessToken,
+    ): QuizAttempt
+    {
+        $attempt = QuizAttempt::find($attemptId);
+
+        if (!$attempt
+            || (int) $attempt->quiz_id !== (int) $quiz->id
+            || !$attempt->result_access_token_hash
+            || !$attempt->result_access_expires_at
+            || $attempt->result_access_expires_at->isPast()
+            || !hash_equals(
+                $attempt->result_access_token_hash,
+                hash('sha256', $resultAccessToken),
+            )) {
+            throw ValidationException::withMessages([
+                'attempt_id' => 'Cette tentative ou son code secret est invalide.',
+            ]);
+        }
+
+        return $attempt;
+    }
+
+    private function submittedAttemptResponse(Quiz $quiz, QuizAttempt $attempt)
+    {
+        $submission = $attempt->submission()
+            ->with('answers.question', 'answers.choice')
+            ->first();
+
+        if (!$submission) {
+            abort(response()->json([
+                'message' => 'Cette tentative est marquée comme envoyée, mais son résultat est indisponible.',
+            ], 409));
+        }
+
+        if ($quiz->isProgressive()) {
+            return response()->json([
+                'message' => 'Diagnostic déjà enregistré.',
+                'already_submitted' => true,
+                'submission' => $submission,
+                'stade_atteint' => $submission->stade_atteint,
+                'stage_scores' => $submission->stage_scores,
+            ]);
+        }
+
+        return response()->json([
+            'message' => 'Réponses déjà enregistrées.',
+            'already_submitted' => true,
+            'submission' => $submission,
+        ]);
     }
 }

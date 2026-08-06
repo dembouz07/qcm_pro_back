@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Survey;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class PublicSurveyController extends Controller
 {
@@ -46,16 +47,64 @@ class PublicSurveyController extends Controller
         }
 
         $data = $request->validate([
-            'answers' => ['required', 'array'],
+            'answers' => ['required', 'array', 'min:1', 'max:100'],
         ]);
 
         // On ne conserve que les réponses correspondant à des questions existantes.
-        $validIds = collect($survey->questions)->pluck('id')->map(fn ($i) => (string) $i)->all();
+        $questions = collect($survey->questions)->keyBy(fn ($question) => (string) $question['id']);
+        $submittedIds = collect(array_keys($data['answers']))->map(fn ($id) => (string) $id);
+
+        if ($submittedIds->diff($questions->keys())->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'answers' => 'Les réponses contiennent une question inconnue.',
+            ]);
+        }
+
         $answers = [];
-        foreach ($data['answers'] as $qid => $value) {
-            if (in_array((string) $qid, $validIds, true)) {
-                $answers[(string) $qid] = $value;
+        $errors = [];
+
+        foreach ($questions as $questionId => $question) {
+            if (!array_key_exists($questionId, $data['answers'])) {
+                $errors["answers.{$questionId}"] = 'Cette question requiert une réponse.';
+                continue;
             }
+
+            $value = $data['answers'][$questionId];
+            $type = $question['type'] ?? 'text';
+            $options = array_values($question['options'] ?? []);
+
+            if ($type === 'text') {
+                if (!is_string($value) || trim($value) === '' || mb_strlen($value) > 2000) {
+                    $errors["answers.{$questionId}"] = 'La réponse texte doit contenir entre 1 et 2 000 caractères.';
+                    continue;
+                }
+                $answers[$questionId] = trim($value);
+                continue;
+            }
+
+            if ($type === 'single') {
+                if (!is_string($value) || !in_array($value, $options, true)) {
+                    $errors["answers.{$questionId}"] = 'Choisissez une option proposée.';
+                    continue;
+                }
+                $answers[$questionId] = $value;
+                continue;
+            }
+
+            if (!is_array($value)
+                || $value === []
+                || count($value) > 20
+                || count(array_unique($value, SORT_STRING)) !== count($value)
+                || collect($value)->contains(fn ($item) => !is_string($item) || !in_array($item, $options, true))) {
+                $errors["answers.{$questionId}"] = 'Choisissez une ou plusieurs options proposées, sans doublon.';
+                continue;
+            }
+
+            $answers[$questionId] = array_values($value);
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
         }
 
         $survey->responses()->create([

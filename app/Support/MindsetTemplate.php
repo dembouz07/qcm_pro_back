@@ -9,11 +9,11 @@ final class MindsetTemplate
         return config('mindset');
     }
 
-    public static function questions(): array
+    public static function questions(?array $template = null): array
     {
         $questions = [];
 
-        foreach (self::template()['pillars'] as $pillar) {
+        foreach (($template ?? self::template())['pillars'] as $pillar) {
             foreach ($pillar['questions'] as $question) {
                 $questions[$question['key']] = [
                     ...$question,
@@ -37,14 +37,16 @@ final class MindsetTemplate
         return $labels;
     }
 
-    public static function interpretationFor(int $score): array
+    public static function interpretationFor(int $score, ?array $template = null): array
     {
-        foreach (self::template()['interpretations'] as $interpretation) {
+        $methodology = $template ?? self::template();
+
+        foreach ($methodology['interpretations'] as $interpretation) {
             if ($score >= $interpretation['min'] && $score <= $interpretation['max']) {
                 return $interpretation;
             }
         }
 
-        return self::template()['interpretations'][0];
+        return $methodology['interpretations'][0];
     }
 }

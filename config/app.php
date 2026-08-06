@@ -30,7 +30,7 @@ return [
     */
     'super_admins' => array_filter(array_map(
         'trim',
-        explode(',', env('SUPER_ADMIN_EMAILS', 'admin@example.com'))
+        explode(',', env('SUPER_ADMIN_EMAILS', ''))
     )),
 
     /*
@@ -71,6 +71,8 @@ return [
     */
 
     'url' => env('APP_URL', 'http://localhost'),
+
+    'frontend_url' => env('FRONTEND_URL', 'http://localhost:5173'),
 
     /*
     |--------------------------------------------------------------------------

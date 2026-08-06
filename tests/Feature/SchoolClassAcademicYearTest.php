@@ -191,6 +191,9 @@ class SchoolClassAcademicYearTest extends TestCase
         $olderClass = $this->createClass($trainer, 'Terminale A', '2025-2026', 'TA2526');
         $newerClass = $this->createClass($trainer, 'Terminale A', '2026-2027', 'TA2627');
 
+        $this->withHeader('Origin', 'http://localhost:5173')
+            ->withSession([]);
+
         $this->postJson('/api/auth/register', [
             'name' => 'Eleve 2025',
             'email' => 'eleve.2025@example.com',

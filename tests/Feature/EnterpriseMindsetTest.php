@@ -59,6 +59,7 @@ class EnterpriseMindsetTest extends TestCase
         $assessment->assertCreated()
             ->assertJsonPath('total_score', 60)
             ->assertJsonPath('level', 'Mindset en construction')
+            ->assertJsonPath('methodology_version', '1.0')
             ->assertJsonCount(20, 'responses');
 
         $this->assertDatabaseHas('mindset_assessments', [
@@ -66,7 +67,11 @@ class EnterpriseMindsetTest extends TestCase
             'company_employee_id' => $employee->json('id'),
             'type' => 'initial',
             'total_score' => 60,
+            'methodology_version' => '1.0',
         ]);
+
+        $this->assertNotNull($assessment->json('methodology_hash'));
+        $this->assertSame('1.0', $assessment->json('methodology_snapshot.version'));
 
         $this->getJson('/api/enterprise/dashboard')
             ->assertOk()
