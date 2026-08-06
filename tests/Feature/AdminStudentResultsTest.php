@@ -47,10 +47,12 @@ class AdminStudentResultsTest extends TestCase
             ->assertOk()
             ->assertJsonPath('student.id', $student->id)
             ->assertJsonPath('student.class.id', $class->id)
+            ->assertJsonPath('student.class.academic_year', '2026-2027')
             ->assertJsonPath('stats.submissions_count', 1)
             ->assertJsonPath('stats.average_note', 16)
             ->assertJsonPath('stats.best_note', 16)
             ->assertJsonCount(1, 'results')
+            ->assertJsonPath('results.0.quiz.academic_year', '2026-2027')
             ->assertJsonPath('results.0.quiz.title', 'Mathématiques');
     }
 
@@ -75,6 +77,7 @@ class AdminStudentResultsTest extends TestCase
         ]);
         $class = SchoolClass::create([
             'name' => "Classe {$suffix}",
+            'academic_year' => '2026-2027',
             'code' => "CLASS{$suffix}",
             'owner_id' => $trainer->id,
         ]);

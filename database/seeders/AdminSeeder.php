@@ -11,23 +11,36 @@ class AdminSeeder extends Seeder
 {
     public function run(): void
     {
-        $class = SchoolClass::firstOrCreate(
-            ['name' => 'Terminale A'],
-            ['code' => 'TA']
-        );
-
-        SchoolClass::firstOrCreate(
-            ['name' => 'Première S'],
-            ['code' => 'PS']
-        );
-
-        User::updateOrCreate(
+        $admin = User::updateOrCreate(
             ['email' => 'admin@example.com'],
             [
                 'name' => 'Administrateur',
                 'password' => Hash::make('password'),
                 'role' => 'admin',
                 'school_class_id' => null,
+            ]
+        );
+
+        $academicYear = SchoolClass::currentAcademicYear();
+        $class = SchoolClass::firstOrCreate(
+            [
+                'name' => 'Terminale A',
+                'academic_year' => $academicYear,
+                'owner_id' => $admin->id,
+            ],
+            [
+                'code' => $this->availableCode('TA', $academicYear),
+            ]
+        );
+
+        SchoolClass::firstOrCreate(
+            [
+                'name' => 'Première S',
+                'academic_year' => $academicYear,
+                'owner_id' => $admin->id,
+            ],
+            [
+                'code' => $this->availableCode('PS', $academicYear),
             ]
         );
 
@@ -40,5 +53,20 @@ class AdminSeeder extends Seeder
                 'school_class_id' => $class->id,
             ]
         );
+    }
+
+    private function availableCode(string $prefix, string $academicYear): string
+    {
+        [$startYear, $endYear] = explode('-', $academicYear);
+        $base = strtoupper($prefix . substr($startYear, -2) . substr($endYear, -2));
+        $code = $base;
+        $suffix = 1;
+
+        while (SchoolClass::where('code', $code)->exists()) {
+            $code = $base . $suffix;
+            $suffix++;
+        }
+
+        return $code;
     }
 }

@@ -78,6 +78,7 @@ class StudentQuizController extends Controller
                 'quiz_title' => $s->quiz?->title,
                 'quiz_type' => $s->quiz?->type,
                 'school_class' => $s->quiz?->schoolClass?->name,
+                'academic_year' => $s->quiz?->schoolClass?->academic_year,
                 'score' => $s->score,
                 'total_points' => $s->total_points,
                 'percentage' => $s->percentage,

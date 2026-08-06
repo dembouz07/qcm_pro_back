@@ -87,6 +87,8 @@ class ResultController extends Controller
                     ?: 'Anonyme',
                 'email' => $submission->user?->email,
                 'class' => $submission->user?->schoolClass?->name ?? $quiz?->schoolClass?->name,
+                'academic_year' => $submission->user?->schoolClass?->academic_year
+                    ?? $quiz?->schoolClass?->academic_year,
             ],
             'correction' => $correction,
         ]);
@@ -122,6 +124,7 @@ class ResultController extends Controller
                 'class' => [
                     'id' => $student->schoolClass->id,
                     'name' => $student->schoolClass->name,
+                    'academic_year' => $student->schoolClass->academic_year,
                 ],
             ],
             'stats' => [
@@ -149,6 +152,7 @@ class ResultController extends Controller
                     'title' => $submission->quiz?->title,
                     'type' => $submission->quiz?->type,
                     'class' => $submission->quiz?->schoolClass?->name,
+                    'academic_year' => $submission->quiz?->schoolClass?->academic_year,
                 ],
             ])->values(),
         ]);
