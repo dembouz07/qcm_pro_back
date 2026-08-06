@@ -2,14 +2,29 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 
 class SchoolClass extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name', 'code', 'owner_id'];
+    protected $fillable = ['name', 'academic_year', 'code', 'owner_id'];
+
+    protected static function booted(): void
+    {
+        static::creating(function (SchoolClass $schoolClass): void {
+            $schoolClass->academic_year ??= self::currentAcademicYear();
+        });
+    }
+
+    public static function currentAcademicYear(): string
+    {
+        $today = now();
+        $startYear = $today->month >= 8 ? $today->year : $today->year - 1;
+
+        return sprintf('%d-%d', $startYear, $startYear + 1);
+    }
 
     public function owner()
     {

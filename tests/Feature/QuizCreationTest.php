@@ -28,6 +28,7 @@ class QuizCreationTest extends TestCase
         ]);
         $this->class = SchoolClass::create([
             'name' => 'Classe de test',
+            'academic_year' => '2026-2027',
             'code' => 'TEST01',
             'owner_id' => $this->admin->id,
         ]);
@@ -226,6 +227,7 @@ class QuizCreationTest extends TestCase
         $otherAdmin = User::factory()->create(['role' => 'admin']);
         $otherClass = SchoolClass::create([
             'name' => 'Classe étrangère',
+            'academic_year' => '2026-2027',
             'code' => 'OTHER1',
             'owner_id' => $otherAdmin->id,
         ]);

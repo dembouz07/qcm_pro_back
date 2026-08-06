@@ -12,9 +12,18 @@ class SchoolClassController extends Controller
 {
     public function index(Request $request)
     {
+        $data = $request->validate([
+            'academic_year' => $this->academicYearRules(required: false),
+        ]);
+
         return SchoolClass::query()
             ->where('owner_id', $request->user()->id)
+            ->when(
+                isset($data['academic_year']),
+                fn ($query) => $query->where('academic_year', $data['academic_year'])
+            )
             ->withCount(['users', 'quizzes'])
+            ->orderByDesc('academic_year')
             ->orderBy('name')
             ->get();
     }
@@ -26,6 +35,7 @@ class SchoolClassController extends Controller
         return response()->json([
             'id' => $class->id,
             'name' => $class->name,
+            'academic_year' => $class->academic_year,
             'code' => $class->code,
             'students' => $class->users()
                 ->where('role', 'student')
@@ -36,8 +46,23 @@ class SchoolClassController extends Controller
 
     public function store(Request $request)
     {
+        $academicYear = $request->filled('academic_year')
+            ? trim((string) $request->input('academic_year'))
+            : SchoolClass::currentAcademicYear();
+        $request->merge(['academic_year' => $academicYear]);
+
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:120'],
+            'name' => [
+                'required',
+                'string',
+                'max:120',
+                Rule::unique('school_classes', 'name')->where(
+                    fn ($query) => $query
+                        ->where('owner_id', $request->user()->id)
+                        ->where('academic_year', $academicYear)
+                ),
+            ],
+            'academic_year' => $this->academicYearRules(),
             'code' => ['nullable', 'string', 'max:30', 'unique:school_classes,code'],
         ]);
 
@@ -51,12 +76,29 @@ class SchoolClassController extends Controller
     {
         $this->authorizeOwner($request, $class);
 
+        $academicYear = $request->filled('academic_year')
+            ? trim((string) $request->input('academic_year'))
+            : $class->academic_year;
+        $request->merge(['academic_year' => $academicYear]);
+
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:120'],
+            'name' => [
+                'required',
+                'string',
+                'max:120',
+                Rule::unique('school_classes', 'name')
+                    ->where(
+                        fn ($query) => $query
+                            ->where('owner_id', $request->user()->id)
+                            ->where('academic_year', $academicYear)
+                    )
+                    ->ignore($class->id),
+            ],
+            'academic_year' => $this->academicYearRules(),
             'code' => ['nullable', 'string', 'max:30', Rule::unique('school_classes', 'code')->ignore($class->id)],
         ]);
 
-        if (!empty($data['code'])) {
+        if (! empty($data['code'])) {
             $data['code'] = strtoupper($data['code']);
         }
 
@@ -77,7 +119,7 @@ class SchoolClassController extends Controller
     private function authorizeOwner(Request $request, SchoolClass $class): void
     {
         if ((int) $class->owner_id !== (int) $request->user()->id) {
-            abort(response()->json(['message' => "Cette classe ne vous appartient pas."], 403));
+            abort(response()->json(['message' => 'Cette classe ne vous appartient pas.'], 403));
         }
     }
 
@@ -88,5 +130,23 @@ class SchoolClassController extends Controller
         } while (SchoolClass::where('code', $code)->exists());
 
         return $code;
+    }
+
+    private function academicYearRules(bool $required = true): array
+    {
+        return [
+            $required ? 'required' : 'sometimes',
+            'string',
+            'regex:/^\d{4}-\d{4}$/',
+            function (string $attribute, mixed $value, \Closure $fail): void {
+                if (! is_string($value) || ! preg_match('/^(\d{4})-(\d{4})$/', $value, $matches)) {
+                    return;
+                }
+
+                if ((int) $matches[2] !== (int) $matches[1] + 1) {
+                    $fail("L'année scolaire doit contenir deux années consécutives (ex. 2026-2027).");
+                }
+            },
+        ];
     }
 }

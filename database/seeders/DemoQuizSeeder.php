@@ -13,8 +13,14 @@ class DemoQuizSeeder extends Seeder
 {
     public function run(): void
     {
-        $class = SchoolClass::where('name', 'Terminale A')->first();
         $admin = User::where('email', 'admin@example.com')->first();
+        $class = $admin
+            ? SchoolClass::query()
+                ->where('owner_id', $admin->id)
+                ->where('name', 'Terminale A')
+                ->where('academic_year', SchoolClass::currentAcademicYear())
+                ->first()
+            : null;
 
         if (!$class || !$admin) {
             $this->command->warn('Classe ou admin non trouvé. Exécutez AdminSeeder d\'abord.');
